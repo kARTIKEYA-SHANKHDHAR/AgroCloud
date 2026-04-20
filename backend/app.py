@@ -15,6 +15,15 @@ def create_app() -> Flask:
     app = Flask(__name__)
     CORS(app, resources={r"/*": {"origins": "*"}})
 
+    # --- Fix for "Host '' is not trusted" in local Lambda testing ---
+    @app.before_request
+    def ensure_host():
+        if not request.headers.get("Host"):
+            # This is a bit of a hack for Werkzeug 3.0+ security checks
+            # in local environments like Lambda RIE
+            request.environ["HTTP_HOST"] = "localhost"
+    app.config["TRUSTED_HOSTS"] = ["*"] 
+
     # --- Configuration ---
     app.config["MODEL_PATH"] = os.getenv(
         "MODEL_PATH",
@@ -405,6 +414,10 @@ def create_app() -> Flask:
 
     return app
 
+from apig_wsgi import make_lambda_handler
+
+app = create_app()
+handler = make_lambda_handler(app)
 
 
 app_instance = create_app()
@@ -416,4 +429,5 @@ def handler(event, context):
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     app_instance.run(host="0.0.0.0", port=port)
+
 
