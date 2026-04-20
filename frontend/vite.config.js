@@ -9,5 +9,8 @@ export default defineConfig({
   build: {
     outDir: "dist",
   },
+  // Fix "global is not defined" error thrown by amazon-cognito-identity-js
+  define: {
+    global: "globalThis",
+  },
 });
-

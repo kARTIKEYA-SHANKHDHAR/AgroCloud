@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  AgroCloud Backend Deployment via AWS SAM using Docker for ML dependencies and DynamoDB for storage.
+  AgroCloud Backend Deployment — 100% AWS Pure Stack (Lambda, DynamoDB, Cognito).
 
 Globals:
   Function:
@@ -9,6 +9,31 @@ Globals:
     MemorySize: 2048
 
 Resources:
+  # ── COGNITO USER POOL (Pure AWS Auth) ─────────────────────
+  AgroUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: AgroCloudUsers
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: true
+
+  AgroUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: AgroCloudWebClient
+      UserPoolId: !Ref AgroUserPool
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+
   # ── MAIN LAMBDA FUNCTION ────────────────────────────────────
   AgroCloudApi:
     Type: AWS::Serverless::Function
@@ -16,7 +41,6 @@ Resources:
       PackageType: Image
       Architectures:
         - arm64
-      # Added Policies for DynamoDB access
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref PredictionsTable
@@ -26,6 +50,8 @@ Resources:
         Variables:
           PREDICTIONS_TABLE: !Ref PredictionsTable
           FARMS_TABLE: !Ref FarmsTable
+          COGNITO_USER_POOL_ID: !Ref AgroUserPool
+          COGNITO_CLIENT_ID: !Ref AgroUserPoolClient
       Events:
         ProxyApiRoot:
           Type: Api
@@ -43,8 +69,6 @@ Resources:
       DockerTag: latest
 
   # ── DYNAMODB TABLES ─────────────────────────────────────────
-  
-  # Table for storing prediction history
   PredictionsTable:
     Type: AWS::Serverless::SimpleTable
     Properties:
@@ -52,7 +76,6 @@ Resources:
         Name: id
         Type: String
 
-  # Table for storing farm locations
   FarmsTable:
     Type: AWS::Serverless::SimpleTable
     Properties:
@@ -62,11 +85,11 @@ Resources:
 
 Outputs:
   AgroCloudApiEndpoint:
-    Description: "API Gateway endpoint URL for your Flask App"
+    Description: "API Gateway endpoint URL"
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
-  PredictionsTableName:
-    Description: "The name of the DynamoDB table for predictions"
-    Value: !Ref PredictionsTable
-  FarmsTableName:
-    Description: "The name of the DynamoDB table for farms"
-    Value: !Ref FarmsTable
+  CognitoUserPoolId:
+    Description: "ID of the User Pool"
+    Value: !Ref AgroUserPool
+  CognitoClientId:
+    Description: "ID of the User Pool Client"
+    Value: !Ref AgroUserPoolClient

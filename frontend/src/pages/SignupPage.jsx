@@ -6,10 +6,12 @@ import ThemeToggle from "../components/ThemeToggle";
 const SignupPage = () => {
   const { signup } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
+  
+  const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [error, setError]       = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [success, setSuccess]   = useState(false); // Cognito signup success -> show confirmation UI
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -17,7 +19,9 @@ const SignupPage = () => {
     setLoading(true);
     try {
       await signup(email, password);
-      navigate("/farmer", { replace: true });
+      // Cognito doesn't auto-login on signup; usually requires verification.
+      // For this simplified version, we'll just show success and redirect to login.
+      setSuccess(true);
     } catch (err) {
       setError(err.message || "Failed to create account");
     } finally {
@@ -25,9 +29,23 @@ const SignupPage = () => {
     }
   };
 
+  if (success) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 dark:bg-slate-900 p-6">
+        <div className="w-full max-w-sm rounded-2xl border border-green-200 dark:border-green-800/40 bg-white dark:bg-slate-800 p-8 text-center shadow-xl">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30 text-3xl">✅</div>
+          <h2 className="mt-4 text-xl font-bold text-gray-900 dark:text-slate-100">Account Created!</h2>
+          <p className="mt-2 text-sm text-gray-500 dark:text-slate-400">
+            Your AWS Cognito account has been created. Please check your email for a verification link, then log in.
+          </p>
+          <button onClick={() => navigate("/login")} className="btn-primary mt-6 w-full">Go to Login</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", minHeight: "100vh", backgroundColor: "var(--bg-base)", transition: "background-color 0.25s ease" }}>
-
       {/* Left green branding panel */}
       <div style={{
         display: "none",
@@ -40,13 +58,12 @@ const SignupPage = () => {
       }}
         className="lg-flex-col"
       >
-        <img src="/gla-logo.png" alt="GLA University" style={{ height: "7rem", width: "auto", filter: "brightness(0) invert(1)", marginBottom: "2rem" }} />
         <h2 style={{ color: "white", fontSize: "1.75rem", fontWeight: 700, textAlign: "center", marginBottom: "0.75rem" }}>Join AgroCloud</h2>
         <p style={{ color: "#bbf7d0", fontSize: "0.875rem", textAlign: "center", maxWidth: "20rem", lineHeight: 1.6 }}>
           Register as a farmer and start receiving AI-powered irrigation recommendations tailored to your crops.
         </p>
         <ul style={{ marginTop: "2rem", display: "flex", flexDirection: "column", gap: "0.625rem", listStyle: "none", padding: 0, width: "100%", maxWidth: "20rem" }}>
-          {["✓ Free farmer account", "✓ AI irrigation predictions", "✓ Historical analytics & trends", "✓ Secure Firebase authentication"].map((item) => (
+          {["✓ Free farmer account", "✓ AI irrigation predictions", "✓ Cloud-based history (DynamoDB)", "✓ Pure AWS Authentication (Cognito)"].map((item) => (
             <li key={item} style={{ color: "#d1fae5", fontSize: "0.875rem" }}>{item}</li>
           ))}
         </ul>
@@ -54,19 +71,13 @@ const SignupPage = () => {
 
       {/* Right form panel */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "3rem 1.5rem", position: "relative" }}>
-
         <div style={{ position: "absolute", top: "1rem", right: "1rem" }}>
           <ThemeToggle />
         </div>
-
         <div style={{ width: "100%", maxWidth: "26rem" }}>
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: "2rem" }}>
-            <img src="/gla-logo.png" alt="GLA University" style={{ height: "4rem", width: "auto" }} />
-          </div>
-
           <div style={{ marginBottom: "2rem" }}>
             <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)" }}>Create your account</h1>
-            <p style={{ marginTop: "0.25rem", fontSize: "0.875rem", color: "var(--text-secondary)" }}>Sign up as a farmer · Admins can be promoted later.</p>
+            <p style={{ marginTop: "0.25rem", fontSize: "0.875rem", color: "var(--text-secondary)" }}>Sign up as a farmer on the AWS Cloud Stack.</p>
           </div>
 
           <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -76,7 +87,7 @@ const SignupPage = () => {
             </div>
             <div>
               <label style={{ display: "block", marginBottom: "0.375rem", fontSize: "0.875rem", fontWeight: 500, color: "var(--text-primary)" }}>Password</label>
-              <input type="password" className="input-field" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 6 characters" required />
+              <input type="password" className="input-field" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="8+ chars, Uppercase + Numeric" required />
             </div>
 
             {error && (
@@ -98,11 +109,6 @@ const SignupPage = () => {
             Already have an account?{" "}
             <Link to="/login" style={{ fontWeight: 600, color: "var(--gla-green-text)", textDecoration: "none" }}>Log in</Link>
           </p>
-
-          <div style={{ marginTop: "2rem", display: "flex", alignItems: "center", gap: "0.5rem", justifyContent: "center" }}>
-            <img src="/gla-logo.png" alt="GLA" style={{ height: "1.5rem", width: "auto" }} />
-            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>GLA University, Mathura — B.Tech CSE Project 2025</span>
-          </div>
         </div>
       </div>
     </div>
