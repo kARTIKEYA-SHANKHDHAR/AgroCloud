@@ -1,9 +1,12 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
+import WeatherWidget from "../components/WeatherWidget";
+import FarmSetupModal from "../components/FarmSetupModal";
 import { predictIrrigation } from "../services/api";
 import { useLanguage } from "../context/LanguageContext";
 import { usePredictions } from "../context/PredictionContext";
+import { useFarm } from "../context/FarmContext";
 
 const crops = ["Wheat", "Maize", "Rice", "Soybean", "Cotton"];
 const soils = ["Loamy", "Sandy", "Clay"];
@@ -11,8 +14,12 @@ const soils = ["Loamy", "Sandy", "Clay"];
 const PredictionPage = () => {
   const { t } = useLanguage();
   const { addPrediction, predictions } = usePredictions();
+  const { weather, hasFarm, farm } = useFarm();
   const navigate = useNavigate();
 
+  const [showFarmModal, setShowFarmModal] = useState(false);
+
+  // ── Form state ───────────────────────────────────────────────
   const [form, setForm] = useState({
     temperature: "",
     humidity: "",
@@ -20,9 +27,21 @@ const PredictionPage = () => {
     crop: crops[0],
     soil: soils[0],
   });
-  const [result, setResult] = useState(null);   // { result, raw }
+  const [result,  setResult]  = useState(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error,   setError]   = useState("");
+
+  // ── Auto-fill weather from FarmContext when it loads/refreshes ─
+  useEffect(() => {
+    if (weather) {
+      setForm((prev) => ({
+        ...prev,
+        temperature: weather.temperature?.toFixed(1) ?? prev.temperature,
+        humidity:    weather.humidity?.toFixed(0)    ?? prev.humidity,
+        rainfall:    weather.rainfall?.toFixed(1)    ?? prev.rainfall,
+      }));
+    }
+  }, [weather]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -37,15 +56,13 @@ const PredictionPage = () => {
     try {
       const payload = {
         temperature: Number(form.temperature),
-        humidity: Number(form.humidity),
-        rainfall: Number(form.rainfall),
-        crop: form.crop,
-        soil: form.soil,
+        humidity:    Number(form.humidity),
+        rainfall:    Number(form.rainfall),
+        crop:        form.crop,
+        soil:        form.soil,
       };
-      const res = await predictIrrigation(payload);
+      const res  = await predictIrrigation(payload);
       const data = res.data; // { result, raw }
-
-      // Save into shared prediction context (updates Dashboard + Analytics live)
       addPrediction({ ...payload, ...data });
       setResult(data);
     } catch (err) {
@@ -59,18 +76,23 @@ const PredictionPage = () => {
   };
 
   const isIrrigation = result?.raw === 1;
-
-  // Last 5 predictions from context
   const recentPredictions = predictions.slice(0, 5);
 
   return (
     <Layout>
+      <FarmSetupModal open={showFarmModal} onClose={() => setShowFarmModal(false)} />
+
       {/* Page header */}
-      <div className="mb-6">
+      <div className="mb-4">
         <h1 className="text-xl font-semibold text-gray-900 dark:text-slate-50">
           {t.predTitle}
         </h1>
         <p className="text-xs text-gray-500 dark:text-slate-400">{t.predSubtitle}</p>
+      </div>
+
+      {/* ── Weather widget (full-width above form) ── */}
+      <div className="mb-5">
+        <WeatherWidget onSetupFarm={() => setShowFarmModal(true)} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
@@ -79,20 +101,42 @@ const PredictionPage = () => {
           onSubmit={handleSubmit}
           className="rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-sm"
         >
+          {/* Weather auto-filled notice */}
+          {hasFarm && weather && (
+            <div className="mb-4 flex items-center gap-2 rounded-xl border border-green-200 dark:border-green-800/40 bg-green-50 dark:bg-green-900/20 px-3 py-2">
+              <span className="text-green-600 dark:text-green-400 text-sm">✓</span>
+              <p className="text-xs text-green-700 dark:text-green-300">
+                Weather auto-filled from <strong>{farm.farmName || "your farm"}</strong> · {farm.city}
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowFarmModal(true)}
+                className="ml-auto text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 underline"
+              >
+                Change farm
+              </button>
+            </div>
+          )}
+
           <p className="mb-4 text-sm font-semibold text-gray-800 dark:text-slate-100">
             {t.predFieldCond}
           </p>
 
-          {/* Numeric inputs */}
+          {/* Weather inputs (editable — user can override auto-fill) */}
           <div className="grid gap-4 md:grid-cols-3">
             {[
-              { name: "temperature", label: t.predTemp },
-              { name: "humidity",    label: t.predHumid },
-              { name: "rainfall",    label: t.predRain },
+              { name: "temperature", label: `${t.predTemp} (°C)` },
+              { name: "humidity",    label: `${t.predHumid} (%)` },
+              { name: "rainfall",    label: `${t.predRain} (mm)` },
             ].map(({ name, label }) => (
               <div key={name}>
                 <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-slate-300">
                   {label}
+                  {hasFarm && weather && (
+                    <span className="ml-1 rounded-full bg-green-100 dark:bg-green-900/40 px-1.5 py-0.5 text-[9px] font-semibold text-green-700 dark:text-green-400">
+                      AUTO
+                    </span>
+                  )}
                 </label>
                 <input
                   type="number"
@@ -107,36 +151,22 @@ const PredictionPage = () => {
             ))}
           </div>
 
-          {/* Select inputs */}
+          {/* Crop + soil selects */}
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-slate-300">
                 {t.predCrop}
               </label>
-              <select
-                name="crop"
-                className="input-field"
-                value={form.crop}
-                onChange={handleChange}
-              >
-                {crops.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
+              <select name="crop" className="input-field" value={form.crop} onChange={handleChange}>
+                {crops.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-slate-300">
                 {t.predSoil}
               </label>
-              <select
-                name="soil"
-                className="input-field"
-                value={form.soil}
-                onChange={handleChange}
-              >
-                {soils.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
+              <select name="soil" className="input-field" value={form.soil} onChange={handleChange}>
+                {soils.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
           </div>
@@ -170,12 +200,8 @@ const PredictionPage = () => {
         <div className="flex flex-col gap-4">
           {/* Result card */}
           <div className="rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-sm">
-            <p className="text-sm font-semibold text-gray-800 dark:text-slate-100">
-              {t.predResultTitle}
-            </p>
-            <p className="mb-4 text-xs text-gray-400 dark:text-slate-400">
-              {t.predResultDesc}
-            </p>
+            <p className="text-sm font-semibold text-gray-800 dark:text-slate-100">{t.predResultTitle}</p>
+            <p className="mb-4 text-xs text-gray-400 dark:text-slate-400">{t.predResultDesc}</p>
 
             {result ? (
               <div
@@ -185,22 +211,18 @@ const PredictionPage = () => {
                     : "border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10"
                 }`}
               >
-                <p
-                  className={`text-xs uppercase tracking-wide font-semibold ${
-                    isIrrigation
-                      ? "text-amber-600 dark:text-amber-300"
-                      : "text-emerald-600 dark:text-emerald-300"
-                  }`}
-                >
+                <p className={`text-xs uppercase tracking-wide font-semibold ${
+                  isIrrigation
+                    ? "text-amber-600 dark:text-amber-300"
+                    : "text-emerald-600 dark:text-emerald-300"
+                }`}>
                   {t.predRecommendation}
                 </p>
-                <p
-                  className={`mt-2 text-lg font-bold ${
-                    isIrrigation
-                      ? "text-amber-700 dark:text-amber-100"
-                      : "text-emerald-700 dark:text-emerald-100"
-                  }`}
-                >
+                <p className={`mt-2 text-lg font-bold ${
+                  isIrrigation
+                    ? "text-amber-700 dark:text-amber-100"
+                    : "text-emerald-700 dark:text-emerald-100"
+                }`}>
                   {result.result}
                 </p>
                 <p className="mt-3 text-[11px] text-gray-400 dark:text-slate-500">
@@ -220,12 +242,10 @@ const PredictionPage = () => {
               </div>
             )}
 
-            <p className="mt-4 text-[11px] text-gray-400 dark:text-slate-500">
-              {t.predNote}
-            </p>
+            <p className="mt-4 text-[11px] text-gray-400 dark:text-slate-500">{t.predNote}</p>
           </div>
 
-          {/* Recent history mini-panel */}
+          {/* Recent predictions mini-panel */}
           {recentPredictions.length > 0 && (
             <div className="rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-sm">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400">
@@ -243,13 +263,11 @@ const PredictionPage = () => {
                         {p.temperature}°C {p.humidity}%rh
                       </span>
                     </span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                        p.prediction === 1
-                          ? "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"
-                          : "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300"
-                      }`}
-                    >
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                      p.prediction === 1
+                        ? "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"
+                        : "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300"
+                    }`}>
                       {p.prediction === 1 ? "💧 Irrigate" : "✓ Skip"}
                     </span>
                   </div>

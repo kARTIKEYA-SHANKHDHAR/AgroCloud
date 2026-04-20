@@ -1,8 +1,10 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
 import StatCard from "../components/StatCard";
 import ChartCard from "../components/ChartCard";
+import WeatherWidget from "../components/WeatherWidget";
+import FarmSetupModal from "../components/FarmSetupModal";
 import { useAuth } from "../services/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import { usePredictions } from "../context/PredictionContext";
@@ -12,6 +14,7 @@ const FarmerDashboard = () => {
   const { t } = useLanguage();
   const { predictions, clearHistory } = usePredictions();
   const navigate = useNavigate();
+  const [showFarmModal, setShowFarmModal] = useState(false);
 
   // ── Derived stats ──────────────────────────────────────────────────────────
   const totalPredictions  = predictions.length;
@@ -64,8 +67,10 @@ const FarmerDashboard = () => {
 
   return (
     <Layout>
+      <FarmSetupModal open={showFarmModal} onClose={() => setShowFarmModal(false)} />
+
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-5 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-900 dark:text-slate-100">
             {t.dashTitle}
@@ -79,6 +84,11 @@ const FarmerDashboard = () => {
         >
           + {t.sidePrediction}
         </button>
+      </div>
+
+      {/* ── Live weather banner ── */}
+      <div className="mb-5">
+        <WeatherWidget onSetupFarm={() => setShowFarmModal(true)} />
       </div>
 
       {/* Stat cards */}
