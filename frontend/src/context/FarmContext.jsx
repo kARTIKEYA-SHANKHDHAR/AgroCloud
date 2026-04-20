@@ -1,13 +1,9 @@
 /**
- * FarmContext.jsx
+ * FarmContext.jsx (AWS SYNCHRONIZED)
  * ──────────────────────────────────────────────────────────────
  * Manages:
- *   • Saved farm location  (localStorage, per-user)
- *   • Live weather data    (Open-Meteo — free, no API key)
- *
- * Open-Meteo docs: https://open-meteo.com/en/docs
- * Endpoint: https://api.open-meteo.com/v1/forecast
- * Fields used: temperature_2m, relativehumidity_2m, precipitation_sum
+ *   • Farm location synced with AWS DynamoDB
+ *   • Live weather data from Open-Meteo
  * ──────────────────────────────────────────────────────────────
  */
 import React, {
@@ -18,177 +14,126 @@ import React, {
   useEffect,
 } from "react";
 import { useAuth } from "../services/AuthContext";
+import { saveFarmToCloud, getFarmFromCloud } from "../services/api";
 
-// ── Storage helpers ───────────────────────────────────────────
-const FARM_KEY = (uid) => `agrocloud_farm_${uid}`;
+const FarmContext = createContext(null);
 
-// ── Default shape of a farm record ───────────────────────────
 const DEFAULT_FARM = {
   farmName: "",
   latitude: null,
   longitude: null,
   city: "",
-  createdAt: null,
-  updatedAt: null,
 };
-
-// ── Context ───────────────────────────────────────────────────
-const FarmContext = createContext(null);
 
 export const FarmProvider = ({ children }) => {
   const { user } = useAuth();
 
-  // Farm location state
-  const [farm, setFarm]           = useState(DEFAULT_FARM);
+  const [farm, setFarm] = useState(DEFAULT_FARM);
   const [farmLoaded, setFarmLoaded] = useState(false);
-
-  // Weather state
-  const [weather, setWeather]         = useState(null);  // { temperature, humidity, rainfall, updatedAt }
+  const [weather, setWeather] = useState(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
-  const [weatherError, setWeatherError]     = useState("");
+  const [weatherError, setWeatherError] = useState("");
 
-  // ── Load farm from localStorage ────────────────────────────
+  // ── Sync with AWS Cloud on Load ──────────────────────────────
   useEffect(() => {
     if (!user?.uid) {
       setFarm(DEFAULT_FARM);
       setFarmLoaded(false);
-      setWeather(null);
       return;
     }
-    try {
-      const saved = localStorage.getItem(FARM_KEY(user.uid));
-      if (saved) {
-        setFarm(JSON.parse(saved));
-      } else {
-        setFarm(DEFAULT_FARM);
+
+    const loadCloudData = async () => {
+      try {
+        const res = await getFarmFromCloud();
+        if (res.data && res.data.latitude) {
+          setFarm({
+            farmName: res.data.farm_name,
+            latitude: parseFloat(res.data.latitude),
+            longitude: parseFloat(res.data.longitude),
+            city: res.data.city,
+          });
+        }
+      } catch (err) {
+        console.error("Cloud sync failed, using local fallback", err);
+      } finally {
+        setFarmLoaded(true);
       }
-    } catch {
-      setFarm(DEFAULT_FARM);
-    }
-    setFarmLoaded(true);
+    };
+
+    loadCloudData();
   }, [user?.uid]);
 
-  // ── Auto-fetch weather whenever farm coordinates change ────
-  useEffect(() => {
-    if (farm.latitude && farm.longitude) {
-      fetchWeather(farm.latitude, farm.longitude);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [farm.latitude, farm.longitude]);
-
-  // ── Fetch live weather from Open-Meteo (free, no API key) ──
+  // ── Fetch Weather ──────────────────────────────────────────
   const fetchWeather = useCallback(async (lat, lon) => {
     if (!lat || !lon) return;
     setWeatherLoading(true);
     setWeatherError("");
     try {
-      const url = new URL("https://api.open-meteo.com/v1/forecast");
-      url.searchParams.set("latitude",  lat);
-      url.searchParams.set("longitude", lon);
-      // Current conditions
-      url.searchParams.set("current_weather", "true");
-      // Hourly humidity at hour 0
-      url.searchParams.set("hourly", "relativehumidity_2m");
-      // Daily precipitation sum
-      url.searchParams.set("daily", "precipitation_sum");
-      url.searchParams.set("forecast_days", "1");
-      url.searchParams.set("timezone", "auto");
-
-      const res  = await fetch(url.toString());
-      if (!res.ok) throw new Error(`Weather API error: ${res.status}`);
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=relativehumidity_2m&daily=precipitation_sum&forecast_days=1&timezone=auto`;
+      const res = await fetch(url);
       const data = await res.json();
 
-      const temperature = parseFloat(data.current_weather?.temperature ?? 0);
-      // Use first hourly humidity reading of the day
-      const humidity    = parseFloat(data.hourly?.relativehumidity_2m?.[0] ?? 0);
-      // Today's total rainfall in mm
-      const rainfall    = parseFloat(data.daily?.precipitation_sum?.[0] ?? 0);
-
       setWeather({
-        temperature,
-        humidity,
-        rainfall,
+        temperature: parseFloat(data.current_weather?.temperature ?? 0),
+        humidity: parseFloat(data.hourly?.relativehumidity_2m?.[0] ?? 0),
+        rainfall: parseFloat(data.daily?.precipitation_sum?.[0] ?? 0),
         windspeed: parseFloat(data.current_weather?.windspeed ?? 0),
         updatedAt: new Date().toISOString(),
       });
     } catch (err) {
-      setWeatherError(err.message || "Failed to fetch weather data.");
+      setWeatherError("Weather fetch failed.");
     } finally {
       setWeatherLoading(false);
     }
   }, []);
 
-  // ── Refresh weather manually ────────────────────────────────
-  const refreshWeather = useCallback(() => {
+  useEffect(() => {
     if (farm.latitude && farm.longitude) {
       fetchWeather(farm.latitude, farm.longitude);
     }
   }, [farm.latitude, farm.longitude, fetchWeather]);
 
-  // ── Save / update farm location ────────────────────────────
+  // ── Save Farm (Local + Cloud) ─────────────────────────────
   const saveFarm = useCallback(
-    (farmData) => {
+    async (farmData) => {
       if (!user?.uid) return;
-      const now = new Date().toISOString();
-      const updated = {
-        ...DEFAULT_FARM,
-        ...farmData,
-        updatedAt: now,
-        createdAt: farm.createdAt || now,
-      };
-      setFarm(updated);
+      
+      // Update locally first for speed (Optimistic Update)
+      setFarm(farmData);
+      
       try {
-        localStorage.setItem(FARM_KEY(user.uid), JSON.stringify(updated));
-      } catch {
-        // storage full
+        // Save to AWS DynamoDB
+        await saveFarmToCloud(farmData);
+      } catch (err) {
+        console.error("Failed to save to cloud", err);
       }
     },
-    [user?.uid, farm.createdAt]
+    [user?.uid]
   );
 
-  // ── Clear farm location ─────────────────────────────────────
   const clearFarm = useCallback(() => {
-    if (!user?.uid) return;
     setFarm(DEFAULT_FARM);
     setWeather(null);
-    localStorage.removeItem(FARM_KEY(user.uid));
-  }, [user?.uid]);
-
-  // ── Detect current device location (one-shot) ──────────────
-  const detectLocation = useCallback(
-    () =>
-      new Promise((resolve, reject) => {
-        if (!navigator.geolocation) {
-          reject(new Error("Geolocation not supported by this browser."));
-          return;
-        }
-        navigator.geolocation.getCurrentPosition(
-          ({ coords }) =>
-            resolve({ latitude: coords.latitude, longitude: coords.longitude }),
-          (err) => reject(new Error(err.message))
-        );
-      }),
-    []
-  );
-
-  // ── Reverse geocode lat/lon → city name ────────────────────
-  const reverseGeocode = useCallback(async (lat, lon) => {
-    try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`
-      );
-      const data = await res.json();
-      return (
-        data.address?.village ||
-        data.address?.town ||
-        data.address?.city ||
-        data.address?.county ||
-        "Unknown location"
-      );
-    } catch {
-      return "Unknown location";
-    }
   }, []);
+
+  const detectLocation = () =>
+    new Promise((resolve, reject) => {
+      if (!navigator.geolocation) return reject(new Error("No GPS"));
+      navigator.geolocation.getCurrentPosition(
+        ({ coords }) => resolve({ latitude: coords.latitude, longitude: coords.longitude }),
+        (err) => reject(new Error(err.message))
+      );
+    });
+
+  const reverseGeocode = async (lat, lon) => {
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
+      const data = await res.json();
+      return data.address?.village || data.address?.city || "Field Location";
+    } catch {
+      return "Field Location";
+    }
+  };
 
   return (
     <FarmContext.Provider
@@ -202,7 +147,7 @@ export const FarmProvider = ({ children }) => {
         weather,
         weatherLoading,
         weatherError,
-        refreshWeather,
+        refreshWeather: () => fetchWeather(farm.latitude, farm.longitude),
         hasFarm: Boolean(farm.latitude && farm.longitude),
       }}
     >
@@ -211,8 +156,4 @@ export const FarmProvider = ({ children }) => {
   );
 };
 
-export const useFarm = () => {
-  const ctx = useContext(FarmContext);
-  if (!ctx) throw new Error("useFarm must be used inside FarmProvider");
-  return ctx;
-};
+export const useFarm = () => useContext(FarmContext);

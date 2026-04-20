@@ -1,4 +1,5 @@
 import os
+import uuid
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime
 from typing import Any, Dict
@@ -8,159 +9,111 @@ from flask_cors import CORS
 import joblib
 import pandas as pd
 import firebase_admin
-from firebase_admin import credentials, firestore, auth as firebase_auth
-
+from firebase_admin import credentials, auth as firebase_auth
+import boto3
 
 def create_app() -> Flask:
     app = Flask(__name__)
     CORS(app, resources={r"/*": {"origins": "*"}})
-
-    # --- Fix for "Host '' is not trusted" in local Lambda testing ---
-    @app.before_request
-    def ensure_host():
-        if not request.headers.get("Host"):
-            # This is a bit of a hack for Werkzeug 3.0+ security checks
-            # in local environments like Lambda RIE
-            request.environ["HTTP_HOST"] = "localhost"
-    app.config["TRUSTED_HOSTS"] = ["*"] 
 
     # --- Configuration ---
     app.config["MODEL_PATH"] = os.getenv(
         "MODEL_PATH",
         os.path.join(os.path.dirname(__file__), "irrigation_model.pkl"),
     )
-    app.config["FIREBASE_SERVICE_ACCOUNT"] = os.getenv("FIREBASE_SERVICE_ACCOUNT")
-
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "firebase-key.json"
+    
+    # --- DynamoDB Configuration ---
+    PREDICTIONS_TABLE = os.getenv("PREDICTIONS_TABLE")
+    FARMS_TABLE = os.getenv("FARMS_TABLE")
+    
+    # Initialize DynamoDB Client (uses Lambda execution role permissions)
+    dynamodb = boto3.resource("dynamodb", region_name="ap-south-1")
+    predictions_table = dynamodb.Table(PREDICTIONS_TABLE) if PREDICTIONS_TABLE else None
+    farms_table = dynamodb.Table(FARMS_TABLE) if FARMS_TABLE else None
 
     # --- Initialize Firebase Admin ---
     if not firebase_admin._apps:
-        cred = None
-        service_account_path = app.config["FIREBASE_SERVICE_ACCOUNT"] or os.getenv(
-            "GOOGLE_APPLICATION_CREDENTIALS"
-        )
-        if service_account_path and os.path.exists(service_account_path):
-            cred = credentials.Certificate(service_account_path)
-        else:
-            raise RuntimeError(
-                "Firebase service account JSON path not configured. "
-                "Set FIREBASE_SERVICE_ACCOUNT or GOOGLE_APPLICATION_CREDENTIALS."
-            )
-
-        firebase_admin.initialize_app(cred)
-
-    db = firestore.client()
+        # For simplicity in AWS, we assume the credentials file exists or use default
+        try:
+            cred = credentials.Certificate("firebase-key.json")
+            firebase_admin.initialize_app(cred)
+        except Exception:
+            # Fallback for dev/local without firebase-key
+            pass
 
     # --- Load ML Model ---
-    if not os.path.exists(app.config["MODEL_PATH"]):
-        raise RuntimeError(
-            f"Model file not found at {app.config['MODEL_PATH']}. "
-            "Run model/train_model.py to generate the model."
-        )
+    if os.path.exists(app.config["MODEL_PATH"]):
+        model = joblib.load(app.config["MODEL_PATH"])
+    else:
+        model = None
 
-    model = joblib.load(app.config["MODEL_PATH"])
-
-    # --------- Helpers ----------
     _executor = ThreadPoolExecutor(max_workers=4)
 
-    def _fetch_user_doc(uid: str):
-        """Fetch user document from Firestore (runs in thread for timeout support)."""
-        return db.collection("users").document(uid).get()
-
-    def verify_token_and_load_user(require_admin: bool = False) -> Dict[str, Any]:
-        """Verify Firebase ID token from Authorization header and optionally enforce admin role."""
+    def verify_token_and_load_user() -> Dict[str, Any]:
+        """Verify Firebase token and return user info."""
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
-            raise PermissionError("Missing or invalid Authorization header.")
+            raise PermissionError("Missing Authorization")
 
         id_token = auth_header.split(" ", 1)[1].strip()
         try:
             decoded = firebase_auth.verify_id_token(id_token)
+            return {"uid": decoded["uid"], "email": decoded.get("email")}
         except Exception as e:
-            raise PermissionError(f"Invalid or expired token: {e}")
-
-        uid = decoded.get("uid")
-        if not uid:
-            raise PermissionError("Unable to extract user id from token.")
-
-        # Fetch user doc with a 10-second timeout so we never hang.
-        try:
-            future = _executor.submit(_fetch_user_doc, uid)
-            user_doc = future.result(timeout=10)
-        except FuturesTimeoutError:
-            # Firestore is unreachable (e.g. invalid service account).
-            # Return a minimal user object so predictions still work.
-            g.user = {"uid": uid, "email": decoded.get("email", ""), "role": "farmer", "active": True}
-            return g.user
-        except Exception:
-            # Any other Firestore error — degrade gracefully.
-            g.user = {"uid": uid, "email": decoded.get("email", ""), "role": "farmer", "active": True}
-            return g.user
-
-        if not user_doc.exists:
-            # Auto-create the user record to avoid re-triggering this edge case.
-            g.user = {"uid": uid, "email": decoded.get("email", ""), "role": "farmer", "active": True}
-            return g.user
-
-        user_data = user_doc.to_dict()
-
-        if not user_data.get("active", True):
-            raise PermissionError("User is deactivated.")
-
-        if require_admin and user_data.get("role") != "admin":
-            raise PermissionError("Admin privileges required.")
-
-        g.user = {
-            "uid": uid,
-            "email": user_data.get("email"),
-            "role": user_data.get("role"),
-            "active": user_data.get("active", True),
-        }
-        return g.user
-
-    def log_event(event_type: str, payload: Dict[str, Any]) -> None:
-        """Persist lightweight system log to Firestore (best-effort, non-blocking)."""
-        def _write():
-            try:
-                db.collection("logs").add(
-                    {
-                        "type": event_type,
-                        "payload": payload,
-                        "timestamp": datetime.utcnow(),
-                    }
-                )
-            except Exception:
-                pass
-        _executor.submit(_write)
+            # For local dev fallback if token verification fails/is unavailable
+            if os.getenv("STAGE") == "local":
+                return {"uid": "local-test-user", "email": "test@example.com"}
+            raise PermissionError(f"Invalid token: {e}")
 
     # --------- Routes ----------
+
     @app.route("/")
     def home():
-        return {
-            "message": "AgroCloud Smart Irrigation API running",
-            "status": "ok"
-        }
-    @app.route("/health", methods=["GET"])
-    def health() -> Any:
-        return jsonify({"status": "ok", "service": "AgroCloud Backend"}), 200
+        return {"message": "AgroCloud AWS API Running", "tables": {"predictions": PREDICTIONS_TABLE, "farms": FARMS_TABLE}}
+
+    # ── FARM ENDPOINTS ─────────────────────────────────────────
+
+    @app.route("/user/farm", methods=["GET"])
+    def get_farm():
+        try:
+            user = verify_token_and_load_user()
+            if not farms_table: return jsonify({"error": "DB not configured"}), 500
+            
+            response = farms_table.get_item(Key={"user_id": user["uid"]})
+            return jsonify(response.get("Item", {})), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 401
+
+    @app.route("/user/farm", methods=["POST"])
+    def save_farm():
+        try:
+            user = verify_token_and_load_user()
+            if not farms_table: return jsonify({"error": "DB not configured"}), 500
+            
+            data = request.get_json()
+            farm_item = {
+                "user_id": user["uid"],
+                "farm_name": data.get("farmName"),
+                "latitude": str(data.get("latitude")),
+                "longitude": str(data.get("longitude")),
+                "city": data.get("city"),
+                "updated_at": datetime.utcnow().isoformat()
+            }
+            farms_table.put_item(Item=farm_item)
+            return jsonify({"success": True}), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 400
+
+    # ── PREDICTION ENDPOINTS ───────────────────────────────────
 
     @app.route("/predict", methods=["POST"])
-    def predict() -> Any:
+    def predict():
         try:
-            user = verify_token_and_load_user(require_admin=False)
+            user = verify_token_and_load_user()
         except PermissionError as e:
             return jsonify({"error": str(e)}), 401
 
-        data = request.get_json() or {}
-        required_fields = ["temperature", "humidity", "rainfall", "crop", "soil"]
-
-        missing = [f for f in required_fields if f not in data]
-        if missing:
-            return (
-                jsonify({"error": f"Missing fields: {', '.join(missing)}"}),
-                400,
-            )
-
+        data = request.get_json()
         try:
             features = pd.DataFrame([{
                 "Temperature": float(data["temperature"]),
@@ -169,256 +122,50 @@ def create_app() -> Flask:
                 "Crop": data["crop"],
                 "Soil": data["soil"]
             }])
-        except (TypeError, ValueError):
-            return jsonify({"error": "Invalid feature types."}), 400
-
-        prediction = model.predict(features)[0]
-        label = "Irrigation Needed" if int(prediction) == 1 else "No Irrigation Needed"
-
-        record = {
-            "userId": user["uid"],
-            "email": user.get("email"),
-            "temperature": features["Temperature"][0],
-            "humidity": features["Humidity"][0],
-            "rainfall": features["Rainfall"][0],
-            "crop": features["Crop"][0],
-            "soil": features["Soil"][0],
-            "prediction": int(prediction),
-            "label": label,
-            "timestamp": datetime.utcnow(),
-        }
-
-        # Persist to Firestore best-effort — don't block the response.
-        def _save_record():
-            try:
-                db.collection("predictions").add(record)
-                log_event(
-                    "prediction",
-                    {"userId": user["uid"], "prediction": int(prediction)},
-                )
-            except Exception:
-                pass
-        _executor.submit(_save_record)
-
-        return jsonify({"result": label, "raw": int(prediction)}), 200
-
-    @app.route("/stats/overview", methods=["GET"])
-    def stats_overview() -> Any:
-        try:
-            verify_token_and_load_user(require_admin=True)
-        except PermissionError as e:
-            return jsonify({"error": str(e)}), 401
-
-        try:
-            users_ref = db.collection("users")
-            farmers = users_ref.where("role", "==", "farmer").stream()
-            total_farmers = sum(1 for _ in farmers)
-
-            preds_ref = db.collection("predictions")
-            preds = list(preds_ref.stream())
-            total_predictions = len(preds)
-
-            irrigation_needed = sum(
-                1 for p in preds if p.to_dict().get("prediction") == 1
-            )
-
-            no_irrigation = total_predictions - irrigation_needed
-
-            return (
-                jsonify(
-                    {
-                        "totalFarmers": total_farmers,
-                        "totalPredictions": total_predictions,
-                        "irrigationNeeded": irrigation_needed,
-                        "noIrrigationNeeded": no_irrigation,
-                    }
-                ),
-                200,
-            )
-        except Exception as e:
-            return jsonify({"error": f"Failed to compute stats: {e}"}), 500
-
-    @app.route("/stats/predictions", methods=["GET"])
-    def stats_predictions() -> Any:
-        """Return prediction counts grouped by date for charting."""
-        try:
-            verify_token_and_load_user(require_admin=True)
-        except PermissionError as e:
-            return jsonify({"error": str(e)}), 401
-
-        try:
-            preds_ref = db.collection("predictions")
-            preds = preds_ref.order_by("timestamp").stream()
-
-            series: Dict[str, Dict[str, int]] = {}
-            for p in preds:
-                doc = p.to_dict()
-                ts = doc.get("timestamp")
-                if isinstance(ts, datetime):
-                    day = ts.date().isoformat()
-                else:
-                    # Firestore timestamp might be its own type; coerce via string
-                    day = str(ts)[:10]
-
-                if day not in series:
-                    series[day] = {"irrigationNeeded": 0, "noIrrigationNeeded": 0}
-
-                if doc.get("prediction") == 1:
-                    series[day]["irrigationNeeded"] += 1
-                else:
-                    series[day]["noIrrigationNeeded"] += 1
-
-            labels = sorted(series.keys())
-            irrigation_needed_data = [series[d]["irrigationNeeded"] for d in labels]
-            no_irrigation_data = [series[d]["noIrrigationNeeded"] for d in labels]
-
-            return (
-                jsonify(
-                    {
-                        "labels": labels,
-                        "irrigationNeeded": irrigation_needed_data,
-                        "noIrrigationNeeded": no_irrigation_data,
-                    }
-                ),
-                200,
-            )
-        except Exception as e:
-            return jsonify({"error": f"Failed to compute prediction trends: {e}"}), 500
-
-    @app.route("/stats/crops", methods=["GET"])
-    def stats_crops() -> Any:
-        """Return irrigation counts grouped by crop."""
-        try:
-            verify_token_and_load_user(require_admin=True)
-        except PermissionError as e:
-            return jsonify({"error": str(e)}), 401
-
-        try:
-            preds_ref = db.collection("predictions")
-            preds = preds_ref.stream()
-
-            crop_counts: Dict[str, int] = {}
-            for p in preds:
-                doc = p.to_dict()
-                crop = doc.get("crop", "Unknown")
-                if doc.get("prediction") == 1:
-                    crop_counts[crop] = crop_counts.get(crop, 0) + 1
-
-            labels = list(crop_counts.keys())
-            values = [crop_counts[c] for c in labels]
-
-            return jsonify({"labels": labels, "values": values}), 200
-        except Exception as e:
-            return jsonify({"error": f"Failed to compute crop stats: {e}"}), 500
-
-    @app.route("/admin/users", methods=["GET"])
-    def admin_users() -> Any:
-        try:
-            verify_token_and_load_user(require_admin=True)
-        except PermissionError as e:
-            return jsonify({"error": str(e)}), 401
-
-        try:
-            users_ref = db.collection("users").stream()
-            users = []
-            for doc in users_ref:
-                data = doc.to_dict()
-                data["id"] = doc.id
-                users.append(data)
-
-            return jsonify({"users": users}), 200
-        except Exception as e:
-            return jsonify({"error": f"Failed to fetch users: {e}"}), 500
-
-    @app.route("/admin/users/<user_id>", methods=["PATCH"])
-    def admin_update_user(user_id: str) -> Any:
-        try:
-            verify_token_and_load_user(require_admin=True)
-        except PermissionError as e:
-            return jsonify({"error": str(e)}), 401
-
-        body = request.get_json() or {}
-        if "active" not in body:
-            return jsonify({"error": "Field 'active' is required."}), 400
-
-        try:
-            db.collection("users").document(user_id).set(
-                {"active": bool(body["active"])}, merge=True
-            )
-            log_event(
-                "user_status_change",
-                {"targetUserId": user_id, "active": bool(body["active"])},
-            )
-            return jsonify({"success": True}), 200
-        except Exception as e:
-            return jsonify({"error": f"Failed to update user: {e}"}), 500
-
-    @app.route("/admin/dataset/upload", methods=["POST"])
-    def admin_upload_dataset() -> Any:
-        """Accept a CSV file and overwrite the irrigation dataset."""
-        try:
-            verify_token_and_load_user(require_admin=True)
-        except PermissionError as e:
-            return jsonify({"error": str(e)}), 401
-
-        if "file" not in request.files:
-            return jsonify({"error": "Missing file field."}), 400
-
-        file = request.files["file"]
-        if file.filename == "":
-            return jsonify({"error": "Empty filename."}), 400
-
-        try:
-            data_dir = os.path.abspath(
-                os.path.join(os.path.dirname(__file__), "..", "data")
-            )
-            os.makedirs(data_dir, exist_ok=True)
-            target_path = os.path.join(data_dir, "irrigation.csv")
-            file.save(target_path)
-            log_event(
-                "dataset_upload",
-                {"uploadedBy": g.user["uid"], "path": target_path},
-            )
-            return jsonify({"success": True}), 200
-        except Exception as e:
-            return jsonify({"error": f"Failed to save dataset: {e}"}), 500
-
-    @app.route("/admin/model/retrain", methods=["POST"])
-    def admin_retrain_model() -> Any:
-        """Trigger model retraining using the current dataset."""
-        try:
-            verify_token_and_load_user(require_admin=True)
-        except PermissionError as e:
-            return jsonify({"error": str(e)}), 401
-
-        try:
-            # Import locally to avoid circular imports
-            from model.train_model import train_and_save_model
-
-            model_paths = train_and_save_model()
-            # Reload model in memory for new predictions
-            nonlocal model
-            model = joblib.load(model_paths["backend_model_path"])
-
-            log_event("model_retrain", {"triggeredBy": g.user["uid"]})
-
-            return jsonify(
-                {
-                    "success": True,
-                    "message": "Model retrained successfully.",
-                    "paths": model_paths,
+            
+            # Predict
+            pred_raw = int(model.predict(features)[0]) if model else 0
+            label = "Irrigation Needed" if pred_raw == 1 else "No Irrigation Needed"
+            
+            # Save to DynamoDB
+            if predictions_table:
+                record = {
+                    "id": str(uuid.uuid4()),
+                    "user_id": user["uid"],
+                    "email": user["email"],
+                    "temperature": str(data["temperature"]),
+                    "humidity": str(data["humidity"]),
+                    "rainfall": str(data["rainfall"]),
+                    "crop": data["crop"],
+                    "soil": data["soil"],
+                    "prediction": pred_raw,
+                    "label": label,
+                    "timestamp": datetime.utcnow().isoformat()
                 }
-            ), 200
+                predictions_table.put_item(Item=record)
+
+            return jsonify({"result": label, "raw": pred_raw}), 200
         except Exception as e:
-            return jsonify({"error": f"Failed to retrain model: {e}"}), 500
+            return jsonify({"error": f"Prediction failed: {e}"}), 500
+
+    @app.route("/predictions", methods=["GET"])
+    def get_predictions():
+        try:
+            user = verify_token_and_load_user()
+            if not predictions_table: return jsonify({"error": "DB not configured"}), 500
+            
+            # Simple scan for this project scale (filtering by user_id)
+            # In production, you would use a Global Secondary Index on user_id
+            response = predictions_table.scan()
+            items = [i for i in response.get("Items", []) if i.get("user_id") == user["uid"]]
+            # Sort by timestamp
+            items.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+            
+            return jsonify(items), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
 
     return app
-
-from apig_wsgi import make_lambda_handler
-
-app = create_app()
-handler = make_lambda_handler(app)
-
 
 app_instance = create_app()
 
@@ -427,7 +174,4 @@ def handler(event, context):
     return serverless_wsgi.handle_request(app_instance, event, context)
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", "5000"))
-    app_instance.run(host="0.0.0.0", port=port)
-
-
+    app_instance.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))

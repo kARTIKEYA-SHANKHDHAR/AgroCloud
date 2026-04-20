@@ -1,20 +1,31 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  AgroCloud Backend Deployment via AWS SAM using Docker for ML dependencies.
+  AgroCloud Backend Deployment via AWS SAM using Docker for ML dependencies and DynamoDB for storage.
 
 Globals:
   Function:
-    Timeout: 30           # Give the ML model up to 30s to respond (usually takes <1s)
-    MemorySize: 2048      # Scikit-learn + Pandas requires a bit of memory
+    Timeout: 30
+    MemorySize: 2048
 
 Resources:
+  # ── MAIN LAMBDA FUNCTION ────────────────────────────────────
   AgroCloudApi:
     Type: AWS::Serverless::Function
     Properties:
       PackageType: Image
       Architectures:
         - arm64
+      # Added Policies for DynamoDB access
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PredictionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref FarmsTable
+      Environment:
+        Variables:
+          PREDICTIONS_TABLE: !Ref PredictionsTable
+          FARMS_TABLE: !Ref FarmsTable
       Events:
         ProxyApiRoot:
           Type: Api
@@ -31,7 +42,31 @@ Resources:
       DockerContext: ./backend
       DockerTag: latest
 
+  # ── DYNAMODB TABLES ─────────────────────────────────────────
+  
+  # Table for storing prediction history
+  PredictionsTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: id
+        Type: String
+
+  # Table for storing farm locations
+  FarmsTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: user_id
+        Type: String
+
 Outputs:
   AgroCloudApiEndpoint:
     Description: "API Gateway endpoint URL for your Flask App"
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+  PredictionsTableName:
+    Description: "The name of the DynamoDB table for predictions"
+    Value: !Ref PredictionsTable
+  FarmsTableName:
+    Description: "The name of the DynamoDB table for farms"
+    Value: !Ref FarmsTable

@@ -37,3 +37,8 @@ export const uploadDataset = (file) => {
 
 export const triggerRetrain = () => api.post("/admin/model/retrain");
 
+// ── AWS Cloud Storage Endpoints ──
+export const saveFarmToCloud = (farmData) => api.post("/user/farm", farmData);
+export const getFarmFromCloud = () => api.get("/user/farm");
+export const getPredictionsFromCloud = () => api.get("/predictions");
+
