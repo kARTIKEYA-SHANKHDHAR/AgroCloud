@@ -1,0 +1,13 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "agrocloud-api"
+resolve_s3 = true
+s3_prefix = "agrocloud-api"
+region = "ap-south-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+image_repositories = ["AgroCloudApi=845517756314.dkr.ecr.ap-south-1.amazonaws.com/agrocloudapide301d48/agrocloudapi24c2a786repo"]
+
+[default.global.parameters]
+region = "ap-south-1"

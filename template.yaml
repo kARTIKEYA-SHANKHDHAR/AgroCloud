@@ -1,0 +1,37 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  AgroCloud Backend Deployment via AWS SAM using Docker for ML dependencies.
+
+Globals:
+  Function:
+    Timeout: 30           # Give the ML model up to 30s to respond (usually takes <1s)
+    MemorySize: 2048      # Scikit-learn + Pandas requires a bit of memory
+
+Resources:
+  AgroCloudApi:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Architectures:
+        - arm64
+      Events:
+        ProxyApiRoot:
+          Type: Api
+          Properties:
+            Path: /
+            Method: any
+        ProxyApiGreedy:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: any
+    Metadata:
+      Dockerfile: Dockerfile
+      DockerContext: ./backend
+      DockerTag: latest
+
+Outputs:
+  AgroCloudApiEndpoint:
+    Description: "API Gateway endpoint URL for your Flask App"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
