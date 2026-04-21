@@ -4,12 +4,19 @@ const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:5000"
 });
 
-// Cognito stores the access token in localStorage automatically.
-// Key format: CognitoIdentityServiceProvider.<clientId>.<username>.accessToken
+// Cognito token extraction helper
+const getCognitoToken = () => {
+  const clientId = import.meta.env.VITE_AWS_CLIENT_ID;
+  if (!clientId) return null;
+
+  const lastUser = localStorage.getItem(`CognitoIdentityServiceProvider.${clientId}.LastAuthUser`);
+  if (!lastUser) return null;
+
+  return localStorage.getItem(`CognitoIdentityServiceProvider.${clientId}.${lastUser}.accessToken`);
+};
+
 api.interceptors.request.use(async (config) => {
-  const storageKeys = Object.keys(localStorage);
-  const accessTokenKey = storageKeys.find(key => key.endsWith(".accessToken"));
-  const token = accessTokenKey ? localStorage.getItem(accessTokenKey) : null;
+  const token = getCognitoToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }

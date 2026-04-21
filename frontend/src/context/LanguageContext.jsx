@@ -32,13 +32,13 @@ const translations = {
     /* CTAs */
     ctaPrimary: "Start as a farmer →",
     ctaSecondary: "Log in",
-    techStack: "Built with Random Forest ML · Firebase · React + Vite",
+    techStack: "Built with Random Forest ML · AWS · React + Vite",
 
     /* Feature cards */
     feat1Title: "Real-time insights",
     feat1Desc: "Instant irrigation recommendations based on temperature, humidity, rainfall, crop & soil data.",
-    feat2Title: "Cloud-native",
-    feat2Desc: "Secure Firebase auth, Firestore storage, and analytics dashboards for farmers and admins.",
+    feat2Title: "Pure AWS Stack",
+    feat2Desc: "Secure AWS Cognito auth, DynamoDB storage, and analytics dashboards for farmers and admins.",
     feat3Title: "Analytics",
     feat3Desc: "Track historical predictions and water savings with interactive charts and trend analysis.",
     feat4Title: "Role-based access",
@@ -152,13 +152,13 @@ const translations = {
     /* CTAs */
     ctaPrimary: "किसान के रूप में शुरू करें →",
     ctaSecondary: "लॉग इन",
-    techStack: "Random Forest ML · Firebase · React + Vite के साथ निर्मित",
+    techStack: "Random Forest ML · AWS · React + Vite के साथ निर्मित",
 
     /* Feature cards */
     feat1Title: "रियल-टाइम अंतर्दृष्टि",
     feat1Desc: "तापमान, आर्द्रता, वर्षा, फसल और मिट्टी के आधार पर तत्काल सिंचाई सिफारिशें।",
-    feat2Title: "क्लाउड-नेटिव",
-    feat2Desc: "सुरक्षित Firebase प्रमाणीकरण, Firestore स्टोरेज और किसानों व व्यवस्थापकों के लिए एनालिटिक्स डैशबोर्ड।",
+    feat2Title: "Pure AWS Stack",
+    feat2Desc: "सुरक्षित AWS Cognito प्रमाणीकरण, DynamoDB स्टोरेज और किसानों व व्यवस्थापकों के लिए एनालिटिक्स डैशबोर्ड।",
     feat3Title: "एनालिटिक्स",
     feat3Desc: "इंटरएक्टिव चार्ट और ट्रेंड विश्लेषण के साथ ऐतिहासिक पूर्वानुमान और जल बचत को ट्रैक करें।",
     feat4Title: "भूमिका-आधारित पहुंच",

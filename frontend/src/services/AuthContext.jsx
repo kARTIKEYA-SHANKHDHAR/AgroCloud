@@ -67,7 +67,8 @@ export const AuthProvider = ({ children }) => {
       const cogUser     = new CognitoUser({ Username: email, Pool: userPool });
 
       cogUser.authenticateUser(authDetails, {
-        onSuccess: () => {
+        onSuccess: (session) => {
+          console.log("Cognito login success");
           cogUser.getUserAttributes((err, attrs) => {
             const emailAttr = attrs?.find(a => a.Name === "email")?.Value || email;
             const userData  = { uid: cogUser.getUsername(), email: emailAttr };
@@ -75,7 +76,10 @@ export const AuthProvider = ({ children }) => {
             resolve(userData);
           });
         },
-        onFailure: reject,
+        onFailure: (err) => {
+          console.error("Cognito login failure:", err);
+          reject(err);
+        },
       });
     });
   };
@@ -93,6 +97,34 @@ export const AuthProvider = ({ children }) => {
     });
   };
 
+  // ── Confirm Signup ──────────────────────────────────────────
+  const confirmSignup = (email, code) => {
+    if (!userPool || !CognitoUser) {
+      return Promise.reject(new Error("AWS Cognito is not configured yet."));
+    }
+    return new Promise((resolve, reject) => {
+      const cogUser = new CognitoUser({ Username: email, Pool: userPool });
+      cogUser.confirmRegistration(code, true, (err, result) => {
+        if (err) return reject(err);
+        resolve(result);
+      });
+    });
+  };
+
+  // ── Resend Code ─────────────────────────────────────────────
+  const resendCode = (email) => {
+    if (!userPool || !CognitoUser) {
+      return Promise.reject(new Error("AWS Cognito is not configured yet."));
+    }
+    return new Promise((resolve, reject) => {
+      const cogUser = new CognitoUser({ Username: email, Pool: userPool });
+      cogUser.resendConfirmationCode((err, result) => {
+        if (err) return reject(err);
+        resolve(result);
+      });
+    });
+  };
+
   // ── Logout ─────────────────────────────────────────────────
   const logout = () => {
     const cogUser = userPool?.getCurrentUser();
@@ -103,10 +135,12 @@ export const AuthProvider = ({ children }) => {
   return (
     <AuthContext.Provider value={{
       user,
-      role: "farmer",   // All Cognito users are farmers (admins handled separately later)
+      role: "farmer",
       loading,
       login,
       signup,
+      confirmSignup,
+      resendCode,
       logout,
       cognitoReady: COGNITO_READY,
     }}>

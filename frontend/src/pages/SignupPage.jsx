@@ -4,24 +4,24 @@ import { useAuth } from "../services/AuthContext";
 import ThemeToggle from "../components/ThemeToggle";
 
 const SignupPage = () => {
-  const { signup } = useAuth();
+  const { signup, confirmSignup, resendCode } = useAuth();
   const navigate = useNavigate();
   
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode]         = useState("");
   const [error, setError]       = useState("");
   const [loading, setLoading]   = useState(false);
-  const [success, setSuccess]   = useState(false); // Cognito signup success -> show confirmation UI
+  const [step, setStep]         = useState(1); // 1: Signup, 2: Verification
 
-  const handleSubmit = async (e) => {
+  const handleSignup = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
       await signup(email, password);
-      // Cognito doesn't auto-login on signup; usually requires verification.
-      // For this simplified version, we'll just show success and redirect to login.
-      setSuccess(true);
+      // Success! Move to verification step
+      setStep(2);
     } catch (err) {
       setError(err.message || "Failed to create account");
     } finally {
@@ -29,24 +29,34 @@ const SignupPage = () => {
     }
   };
 
-  if (success) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 dark:bg-slate-900 p-6">
-        <div className="w-full max-w-sm rounded-2xl border border-green-200 dark:border-green-800/40 bg-white dark:bg-slate-800 p-8 text-center shadow-xl">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30 text-3xl">✅</div>
-          <h2 className="mt-4 text-xl font-bold text-gray-900 dark:text-slate-100">Account Created!</h2>
-          <p className="mt-2 text-sm text-gray-500 dark:text-slate-400">
-            Your AWS Cognito account has been created. Please check your email for a verification link, then log in.
-          </p>
-          <button onClick={() => navigate("/login")} className="btn-primary mt-6 w-full">Go to Login</button>
-        </div>
-      </div>
-    );
-  }
+  const handleVerify = async (e) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      await confirmSignup(email, code);
+      // Success! Now we can redirect to login
+      navigate("/login", { state: { message: "Account verified! You can now log in." } });
+    } catch (err) {
+      setError(err.message || "Verification failed. Check the code.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    setError("");
+    try {
+      await resendCode(email);
+      alert("New verification code sent to your email!");
+    } catch (err) {
+      setError(err.message || "Failed to resend code");
+    }
+  };
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", backgroundColor: "var(--bg-base)", transition: "background-color 0.25s ease" }}>
-      {/* Left green branding panel */}
+      {/* Left branding panel (hidden on mobile) */}
       <div style={{
         display: "none",
         width: "42%",
@@ -58,9 +68,13 @@ const SignupPage = () => {
       }}
         className="lg-flex-col"
       >
-        <h2 style={{ color: "white", fontSize: "1.75rem", fontWeight: 700, textAlign: "center", marginBottom: "0.75rem" }}>Join AgroCloud</h2>
+        <h2 style={{ color: "white", fontSize: "1.75rem", fontWeight: 700, textAlign: "center", marginBottom: "0.75rem" }}>
+          {step === 1 ? "Join AgroCloud" : "Verify Email"}
+        </h2>
         <p style={{ color: "#bbf7d0", fontSize: "0.875rem", textAlign: "center", maxWidth: "20rem", lineHeight: 1.6 }}>
-          Register as a farmer and start receiving AI-powered irrigation recommendations tailored to your crops.
+          {step === 1 
+            ? "Register as a farmer and start receiving AI-powered irrigation recommendations tailored to your crops."
+            : "We've sent a 6-digit verification code to your email. Enter it below to activate your Pure AWS account."}
         </p>
         <ul style={{ marginTop: "2rem", display: "flex", flexDirection: "column", gap: "0.625rem", listStyle: "none", padding: 0, width: "100%", maxWidth: "20rem" }}>
           {["✓ Free farmer account", "✓ AI irrigation predictions", "✓ Cloud-based history (DynamoDB)", "✓ Pure AWS Authentication (Cognito)"].map((item) => (
@@ -75,42 +89,74 @@ const SignupPage = () => {
           <ThemeToggle />
         </div>
         <div style={{ width: "100%", maxWidth: "26rem" }}>
+          
           <div style={{ marginBottom: "2rem" }}>
-            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)" }}>Create your account</h1>
-            <p style={{ marginTop: "0.25rem", fontSize: "0.875rem", color: "var(--text-secondary)" }}>Sign up as a farmer on the AWS Cloud Stack.</p>
+            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)" }}>
+              {step === 1 ? "Create your account" : "Verify your identity"}
+            </h1>
+            <p style={{ marginTop: "0.25rem", fontSize: "0.875rem", color: "var(--text-secondary)" }}>
+              {step === 1 ? "Sign up as a farmer on the AWS Cloud Stack." : `A code was sent to ${email}`}
+            </p>
           </div>
 
-          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-            <div>
-              <label style={{ display: "block", marginBottom: "0.375rem", fontSize: "0.875rem", fontWeight: 500, color: "var(--text-primary)" }}>Email address</label>
-              <input type="email" className="input-field" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required />
-            </div>
-            <div>
-              <label style={{ display: "block", marginBottom: "0.375rem", fontSize: "0.875rem", fontWeight: 500, color: "var(--text-primary)" }}>Password</label>
-              <input type="password" className="input-field" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="8+ chars, Uppercase + Numeric" required />
-            </div>
-
-            {error && (
-              <div style={{
-                borderRadius: "0.5rem", border: "1px solid #fca5a5",
-                backgroundColor: "rgba(254,202,202,0.2)", padding: "0.625rem 0.75rem",
-                fontSize: "0.875rem", color: "#dc2626",
-              }}>
-                {error}
+          {step === 1 ? (
+            /* Signup Form */
+            <form onSubmit={handleSignup} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div>
+                <label style={{ display: "block", marginBottom: "0.375rem", fontSize: "0.875rem", fontWeight: 500, color: "var(--text-primary)" }}>Email address</label>
+                <input type="email" className="input-field" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required />
               </div>
-            )}
+              <div>
+                <label style={{ display: "block", marginBottom: "0.375rem", fontSize: "0.875rem", fontWeight: 500, color: "var(--text-primary)" }}>Password</label>
+                <input type="password" className="input-field" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="8+ chars, Uppercase + Numeric" required />
+              </div>
 
-            <button type="submit" className="btn-primary" style={{ width: "100%", padding: "0.625rem", marginTop: "0.5rem" }} disabled={loading}>
-              {loading ? "Creating account..." : "Create account"}
-            </button>
-          </form>
+              {error && <div className="error-box">{error}</div>}
+
+              <button type="submit" className="btn-primary" style={{ width: "100%", padding: "0.625rem", marginTop: "0.5rem" }} disabled={loading}>
+                {loading ? "Creating account..." : "Create account"}
+              </button>
+            </form>
+          ) : (
+            /* Verification Form */
+            <form onSubmit={handleVerify} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div>
+                <label style={{ display: "block", marginBottom: "0.375rem", fontSize: "0.875rem", fontWeight: 500, color: "var(--text-primary)" }}>Verification Code</label>
+                <input type="text" className="input-field" value={code} onChange={(e) => setCode(e.target.value)} placeholder="123456" maxLength={6} required />
+              </div>
+
+              {error && <div className="error-box">{error}</div>}
+
+              <button type="submit" className="btn-primary" style={{ width: "100%", padding: "0.625rem", marginTop: "0.5rem" }} disabled={loading}>
+                {loading ? "Verifying..." : "Verify & Activate"}
+              </button>
+
+              <button type="button" onClick={handleResend} style={{ background: "none", border: "none", color: "var(--gla-green-text)", fontSize: "0.875rem", cursor: "pointer", marginTop: "0.5rem" }}>
+                Didn't receive a code? Resend
+              </button>
+            </form>
+          )}
 
           <p style={{ marginTop: "1.5rem", textAlign: "center", fontSize: "0.875rem", color: "var(--text-secondary)" }}>
-            Already have an account?{" "}
-            <Link to="/login" style={{ fontWeight: 600, color: "var(--gla-green-text)", textDecoration: "none" }}>Log in</Link>
+            {step === 1 ? (
+              <>Already have an account? <Link to="/login" style={{ fontWeight: 600, color: "var(--gla-green-text)", textDecoration: "none" }}>Log in</Link></>
+            ) : (
+              <button onClick={() => setStep(1)} style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: "0.875rem", cursor: "pointer" }}>← Back to signup</button>
+            )}
           </p>
         </div>
       </div>
+      
+      <style>{`
+        .error-box {
+          border-radius: 0.5rem;
+          border: 1px solid #fca5a5;
+          background-color: rgba(254,202,202,0.2);
+          padding: 0.625rem 0.75rem;
+          font-size: 0.875rem;
+          color: #dc2626;
+        }
+      `}</style>
     </div>
   );
 };
