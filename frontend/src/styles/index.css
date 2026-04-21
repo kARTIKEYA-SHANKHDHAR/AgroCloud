@@ -246,6 +246,20 @@ body {
   color: #f59e0b;
 }
 
+/* ── Responsive Utils ── */
+.hide-on-mobile { display: none !important; }
+@media (min-width: 1024px) {
+  .hide-on-mobile { display: flex !important; }
+  .lg-flex-row    { flex-direction: row !important; }
+  .lg-flex        { display: flex !important; }
+}
+
+@media (max-width: 640px) {
+  .mobile-p-4     { padding: 1rem !important; }
+  .mobile-text-sm { font-size: 0.875rem !important; }
+  .mobile-full    { width: 100% !important; }
+}
+
 /* ── Animations ── */
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(14px); }

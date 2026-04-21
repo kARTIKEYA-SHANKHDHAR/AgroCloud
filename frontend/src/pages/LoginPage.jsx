@@ -73,16 +73,16 @@ const LoginPage = () => {
     <div style={{ display: "flex", minHeight: "100vh", backgroundColor: "var(--bg-base)", transition: "background-color 0.25s ease" }}>
       
       {/* Left branding panel */}
-      <div style={{
-        display: "none",
-        width: "42%",
-        background: "linear-gradient(160deg, #1a4d2e 0%, #2d6a4f 60%, #4a8c6a 100%)",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "3rem",
-      }}
-        className="lg-flex-col"
+      <div 
+        style={{
+          width: "42%",
+          background: "linear-gradient(160deg, #1a4d2e 0%, #2d6a4f 60%, #4a8c6a 100%)",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "3rem",
+        }}
+        className="hide-on-mobile lg-flex"
       >
         <img src="/gla-logo.png" alt="GLA University" style={{ height: "7rem", width: "auto", filter: "brightness(0) invert(1)", marginBottom: "2rem" }} />
         <h2 style={{ color: "white", fontSize: "1.75rem", fontWeight: 700, textAlign: "center", marginBottom: "0.75rem" }}>AgroCloud</h2>
@@ -92,7 +92,10 @@ const LoginPage = () => {
       </div>
 
       {/* Right panel */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "3rem 1.5rem", position: "relative" }}>
+      <div 
+        style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", position: "relative" }}
+        className="mobile-p-4"
+      >
         
         <div style={{ position: "absolute", top: "1rem", right: "1rem" }}>
           <ThemeToggle />
