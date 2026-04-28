@@ -37,10 +37,11 @@ def simulate_sensors():
         
         payload = {
             "thing_id": THING_ID,
-            "moisture": random.randint(20, 55),
+            "moisture": random.randint(20, 75),
             "temperature": round(random.uniform(22.0, 38.0), 1),
-            "humidity": random.randint(40, 75),
+            "humidity": random.randint(40, 85),
             "water_level": random.randint(15, 95),
+            "soil_ph": round(random.uniform(5.0, 8.0), 1),
             "timestamp": int(time.time() * 1000)
         }
         

@@ -174,13 +174,24 @@ def create_app() -> Flask:
             moisture = float(item.get("moisture", 100))
             temp = float(item.get("temperature", 0))
             water = float(item.get("water_level", 100))
+            ph = float(item.get("soil_ph", 7.0))
 
             if moisture < 30:
-                alerts.append("Low soil moisture detected!")
+                alerts.append({"sensor": "Soil Moisture", "level": "critical", "msg": "Low soil moisture detected!"})
+            elif moisture < 45:
+                alerts.append({"sensor": "Soil Moisture", "level": "warning", "msg": "Soil moisture below optimal."})
             if temp > 35:
-                alerts.append("High temperature warning!")
+                alerts.append({"sensor": "Temperature", "level": "critical", "msg": "High temperature warning!"})
+            elif temp > 30:
+                alerts.append({"sensor": "Temperature", "level": "warning", "msg": "Temperature above normal."})
             if water < 20:
-                alerts.append("Low water level in reservoir!")
+                alerts.append({"sensor": "Water Level", "level": "critical", "msg": "Critical low water level!"})
+            elif water < 40:
+                alerts.append({"sensor": "Water Level", "level": "warning", "msg": "Water level is low."})
+            if ph < 5.5 or ph > 7.5:
+                alerts.append({"sensor": "Soil pH", "level": "critical", "msg": f"Soil pH {ph} is out of optimal range (5.5-7.5)!"})
+            elif ph < 6.0 or ph > 7.0:
+                alerts.append({"sensor": "Soil pH", "level": "warning", "msg": "Soil pH slightly outside ideal range."})
 
             item["alerts"] = alerts
             return jsonify(item), 200
