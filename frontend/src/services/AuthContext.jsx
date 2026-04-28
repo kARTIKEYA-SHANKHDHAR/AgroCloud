@@ -125,6 +125,34 @@ export const AuthProvider = ({ children }) => {
     });
   };
 
+  // ── Forgot Password ─────────────────────────────────────────
+  const forgotPassword = (email) => {
+    if (!userPool || !CognitoUser) {
+      return Promise.reject(new Error("AWS Cognito is not configured yet."));
+    }
+    return new Promise((resolve, reject) => {
+      const cogUser = new CognitoUser({ Username: email, Pool: userPool });
+      cogUser.forgotPassword({
+        onSuccess: (result) => resolve(result),
+        onFailure: (err) => reject(err),
+      });
+    });
+  };
+
+  // ── Confirm New Password ─────────────────────────────────────
+  const confirmForgotPassword = (email, code, newPassword) => {
+    if (!userPool || !CognitoUser) {
+      return Promise.reject(new Error("AWS Cognito is not configured yet."));
+    }
+    return new Promise((resolve, reject) => {
+      const cogUser = new CognitoUser({ Username: email, Pool: userPool });
+      cogUser.confirmPassword(code, newPassword, {
+        onSuccess: () => resolve(),
+        onFailure: (err) => reject(err),
+      });
+    });
+  };
+
   // ── Logout ─────────────────────────────────────────────────
   const logout = () => {
     const cogUser = userPool?.getCurrentUser();
@@ -141,6 +169,8 @@ export const AuthProvider = ({ children }) => {
       signup,
       confirmSignup,
       resendCode,
+      forgotPassword,
+      confirmForgotPassword,
       logout,
       cognitoReady: COGNITO_READY,
     }}>

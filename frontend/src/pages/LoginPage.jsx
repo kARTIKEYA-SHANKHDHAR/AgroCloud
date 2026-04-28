@@ -3,77 +3,113 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../services/AuthContext";
 import ThemeToggle from "../components/ThemeToggle";
 
+// View states: "login" | "verify" | "forgot_email" | "forgot_reset" | "forgot_done"
 const LoginPage = () => {
-  const { login, confirmSignup, resendCode, user, role, loading: authLoading } = useAuth();
+  const {
+    login, confirmSignup, resendCode,
+    forgotPassword, confirmForgotPassword,
+    user, role, loading: authLoading,
+  } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  
-  const [email, setEmail] = useState("");
+
+  const [view, setView]       = useState("login");
+  const [email, setEmail]     = useState("");
   const [password, setPassword] = useState("");
-  const [code, setCode] = useState("");
-  const [error, setError] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [code, setCode]       = useState("");
+  const [error, setError]     = useState("");
   const [success, setSuccess] = useState(location.state?.message || "");
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [showVerification, setShowVerification] = useState(false);
+  const [busy, setBusy]       = useState(false);
 
-  // Handle Login
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError("");
-    setSuccess("");
-    setIsLoggingIn(true);
-    try {
-      await login(email, password);
-    } catch (err) {
-      if (err.name === "UserNotConfirmedException") {
-        setShowVerification(true);
-        setError("Your account is not verified yet. We've shown the verification box below. Please enter the code from your email.");
-      } else {
-        setError(err.message || "Login failed. Check your email and password.");
-      }
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
-
-  // Handle Verification (If they were unconfirmed)
-  const handleVerify = async (e) => {
-    e.preventDefault();
-    setError("");
-    setIsLoggingIn(true);
-    try {
-      await confirmSignup(email, code);
-      setSuccess("Account verified successfully! You can now log in.");
-      setShowVerification(false);
-      setCode("");
-    } catch (err) {
-      setError(err.message || "Verification failed. Check the code.");
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
-
-  const handleResend = async () => {
-    setError("");
-    try {
-      await resendCode(email);
-      setSuccess("New verification code sent to your email!");
-    } catch (err) {
-      setError(err.message || "Failed to resend code");
-    }
-  };
-
+  // ── Auto-redirect if already logged in ──────────────────────
   useEffect(() => {
     if (!authLoading && user && role) {
       navigate(role === "admin" ? "/admin" : "/farmer", { replace: true });
     }
   }, [user, role, authLoading]);
 
+  const clear = () => { setError(""); setSuccess(""); };
+
+  // ── Handle Login ─────────────────────────────────────────────
+  const handleLogin = async (e) => {
+    e.preventDefault(); clear(); setBusy(true);
+    try {
+      await login(email, password);
+    } catch (err) {
+      if (err.name === "UserNotConfirmedException") {
+        setView("verify");
+        setError("Account not verified. Enter the code sent to your email.");
+      } else {
+        setError(err.message || "Login failed. Check your credentials.");
+      }
+    } finally { setBusy(false); }
+  };
+
+  // ── Handle Verification ──────────────────────────────────────
+  const handleVerify = async (e) => {
+    e.preventDefault(); clear(); setBusy(true);
+    try {
+      await confirmSignup(email, code);
+      setSuccess("Account verified! You can now sign in.");
+      setView("login"); setCode("");
+    } catch (err) {
+      setError(err.message || "Verification failed. Check the code.");
+    } finally { setBusy(false); }
+  };
+
+  const handleResend = async () => {
+    clear();
+    try {
+      await resendCode(email);
+      setSuccess("New verification code sent to your email!");
+    } catch (err) { setError(err.message || "Failed to resend code"); }
+  };
+
+  // ── Forgot Password Step 1: Send code ───────────────────────
+  const handleForgotRequest = async (e) => {
+    e.preventDefault(); clear(); setBusy(true);
+    try {
+      await forgotPassword(email);
+      setSuccess(`Reset code sent to ${email}. Check your inbox.`);
+      setView("forgot_reset");
+    } catch (err) {
+      setError(err.message || "Could not send reset code. Check your email address.");
+    } finally { setBusy(false); }
+  };
+
+  // ── Forgot Password Step 2: Confirm new password ────────────
+  const handleForgotConfirm = async (e) => {
+    e.preventDefault(); clear(); setBusy(true);
+    try {
+      await confirmForgotPassword(email, code, newPassword);
+      setView("forgot_done");
+    } catch (err) {
+      setError(err.message || "Password reset failed. Try again.");
+    } finally { setBusy(false); }
+  };
+
+  // ── View helpers ─────────────────────────────────────────────
+  const titles = {
+    login:        "Welcome back",
+    verify:       "Verify your account",
+    forgot_email: "Forgot password",
+    forgot_reset: "Reset your password",
+    forgot_done:  "Password changed!",
+  };
+  const subtitles = {
+    login:        "Sign in to your AgroCloud account",
+    verify:       `Enter the code sent to ${email}`,
+    forgot_email: "We'll email you a reset code",
+    forgot_reset: `Enter the code sent to ${email} and your new password`,
+    forgot_done:  "Your password has been reset. Sign in now.",
+  };
+
   return (
     <div style={{ display: "flex", minHeight: "100vh", backgroundColor: "var(--bg-base)", transition: "background-color 0.25s ease" }}>
-      
+
       {/* Left branding panel */}
-      <div 
+      <div
         style={{
           width: "42%",
           background: "linear-gradient(160deg, #1a4d2e 0%, #2d6a4f 60%, #4a8c6a 100%)",
@@ -92,11 +128,7 @@ const LoginPage = () => {
       </div>
 
       {/* Right panel */}
-      <div 
-        style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", position: "relative" }}
-        className="mobile-p-4"
-      >
-        
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", position: "relative" }} className="mobile-p-4">
         <div style={{ position: "absolute", top: "1rem", right: "1rem" }}>
           <ThemeToggle />
         </div>
@@ -106,62 +138,125 @@ const LoginPage = () => {
             <img src="/gla-logo.png" alt="GLA University" style={{ height: "4rem", width: "auto" }} />
           </div>
 
-          <div style={{ marginBottom: "2rem" }}>
+          <div style={{ marginBottom: "1.5rem" }}>
             <h1 style={{ fontSize: "1.5rem", fontWeight: 700, color: "var(--text-primary)" }}>
-              {showVerification ? "Verify your account" : "Welcome back"}
+              {titles[view]}
             </h1>
             <p style={{ marginTop: "0.25rem", fontSize: "0.875rem", color: "var(--text-secondary)" }}>
-              {showVerification ? `Enter the code sent to ${email}` : "Sign in to your Pure AWS AgroCloud account"}
+              {subtitles[view]}
             </p>
           </div>
 
-          {/* Error & Success Messages */}
-          {error && <div className="status-box error">{error}</div>}
+          {/* Messages */}
+          {error   && <div className="status-box error">{error}</div>}
           {success && <div className="status-box success">{success}</div>}
 
-          {!showVerification ? (
-            /* Standard Login Form */
-            <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          {/* ── LOGIN form ── */}
+          {view === "login" && (
+            <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <div>
-                <label style={{ display: "block", marginBottom: "0.375rem", fontSize: "0.875rem", fontWeight: 500, color: "var(--text-primary)" }}>Email address</label>
-                <input type="email" className="input-field" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required />
+                <label style={labelStyle}>Email address</label>
+                <input id="login-email" type="email" className="input-field" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required />
               </div>
               <div>
-                <label style={{ display: "block", marginBottom: "0.375rem", fontSize: "0.875rem", fontWeight: 500, color: "var(--text-primary)" }}>Password</label>
-                <input type="password" className="input-field" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required />
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.375rem" }}>
+                  <label style={labelStyle}>Password</label>
+                  <button
+                    type="button"
+                    id="forgot-password-link"
+                    onClick={() => { clear(); setView("forgot_email"); }}
+                    style={{ background: "none", border: "none", color: "var(--gla-green-text, #16a34a)", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer", padding: 0 }}
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+                <input id="login-password" type="password" className="input-field" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required />
               </div>
-
-              <button type="submit" className="btn-primary" style={{ width: "100%", padding: "0.625rem", marginTop: "0.5rem" }} disabled={isLoggingIn}>
-                {isLoggingIn ? "Signing in..." : "Sign in"}
+              <button id="login-submit" type="submit" className="btn-primary" style={{ width: "100%", padding: "0.625rem", marginTop: "0.5rem" }} disabled={busy}>
+                {busy ? "Signing in..." : "Sign in"}
               </button>
             </form>
-          ) : (
-            /* Verification Form (Shown if user is unconfirmed) */
+          )}
+
+          {/* ── VERIFY form ── */}
+          {view === "verify" && (
             <form onSubmit={handleVerify} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <div>
-                <label style={{ display: "block", marginBottom: "0.375rem", fontSize: "0.875rem", fontWeight: 500, color: "var(--text-primary)" }}>Verification Code</label>
-                <input type="text" className="input-field" value={code} onChange={(e) => setCode(e.target.value)} placeholder="123456" maxLength={6} required />
+                <label style={labelStyle}>Verification Code</label>
+                <input id="verify-code" type="text" className="input-field" value={code} onChange={(e) => setCode(e.target.value)} placeholder="123456" maxLength={6} required />
               </div>
-
-              <button type="submit" className="btn-primary" style={{ width: "100%", padding: "0.625rem", marginTop: "0.5rem" }} disabled={isLoggingIn}>
-                {isLoggingIn ? "Verifying..." : "Verify & Activate"}
+              <button type="submit" className="btn-primary" style={{ width: "100%", padding: "0.625rem" }} disabled={busy}>
+                {busy ? "Verifying..." : "Verify & Activate"}
               </button>
-
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.5rem" }}>
-                <button type="button" onClick={handleResend} style={{ background: "none", border: "none", color: "var(--gla-green-text)", fontSize: "0.875rem", cursor: "pointer" }}>
-                  Resend Code
-                </button>
-                <button type="button" onClick={() => setShowVerification(false)} style={{ background: "none", border: "none", color: "var(--text-muted)", fontSize: "0.875rem", cursor: "pointer" }}>
-                  Back to login
-                </button>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <button type="button" onClick={handleResend} style={ghostBtn("#16a34a")}>Resend Code</button>
+                <button type="button" onClick={() => { clear(); setView("login"); }} style={ghostBtn("var(--text-muted)")}>Back to login</button>
               </div>
             </form>
           )}
 
-          <p style={{ marginTop: "1.5rem", textAlign: "center", fontSize: "0.875rem", color: "var(--text-secondary)" }}>
-            New to AgroCloud?{" "}
-            <Link to="/signup" style={{ fontWeight: 600, color: "var(--gla-green-text)", textDecoration: "none" }}>Create an account</Link>
-          </p>
+          {/* ── FORGOT: Step 1 — Enter email ── */}
+          {view === "forgot_email" && (
+            <form onSubmit={handleForgotRequest} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div>
+                <label style={labelStyle}>Email address</label>
+                <input id="forgot-email" type="email" className="input-field" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required />
+              </div>
+              <button id="forgot-send-code" type="submit" className="btn-primary" style={{ width: "100%", padding: "0.625rem" }} disabled={busy}>
+                {busy ? "Sending..." : "Send Reset Code"}
+              </button>
+              <div style={{ textAlign: "center" }}>
+                <button type="button" onClick={() => { clear(); setView("login"); }} style={ghostBtn("var(--text-muted)")}>Back to login</button>
+              </div>
+            </form>
+          )}
+
+          {/* ── FORGOT: Step 2 — Enter code + new password ── */}
+          {view === "forgot_reset" && (
+            <form onSubmit={handleForgotConfirm} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div>
+                <label style={labelStyle}>Reset Code</label>
+                <input id="reset-code" type="text" className="input-field" value={code} onChange={(e) => setCode(e.target.value)} placeholder="123456" maxLength={6} required />
+              </div>
+              <div>
+                <label style={labelStyle}>New Password</label>
+                <input id="new-password" type="password" className="input-field" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Min. 8 chars, uppercase & number" required minLength={8} />
+              </div>
+              <button id="reset-submit" type="submit" className="btn-primary" style={{ width: "100%", padding: "0.625rem" }} disabled={busy}>
+                {busy ? "Resetting..." : "Reset Password"}
+              </button>
+              <div style={{ textAlign: "center" }}>
+                <button type="button" onClick={() => { clear(); setView("forgot_email"); }} style={ghostBtn("var(--text-muted)")}>← Back</button>
+              </div>
+            </form>
+          )}
+
+          {/* ── FORGOT: Step 3 — Done ── */}
+          {view === "forgot_done" && (
+            <div style={{ textAlign: "center" }}>
+              <p style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>✅</p>
+              <p style={{ fontSize: "0.875rem", color: "var(--text-secondary)", marginBottom: "1.5rem" }}>
+                Your password has been reset successfully. You can now sign in with your new password.
+              </p>
+              <button
+                id="goto-login-after-reset"
+                type="button"
+                className="btn-primary"
+                style={{ width: "100%", padding: "0.625rem" }}
+                onClick={() => { clear(); setView("login"); setCode(""); setNewPassword(""); }}
+              >
+                Sign in now
+              </button>
+            </div>
+          )}
+
+          {/* Bottom link */}
+          {view === "login" && (
+            <p style={{ marginTop: "1.5rem", textAlign: "center", fontSize: "0.875rem", color: "var(--text-secondary)" }}>
+              New to AgroCloud?{" "}
+              <Link to="/signup" style={{ fontWeight: 600, color: "var(--gla-green-text, #16a34a)", textDecoration: "none" }}>Create an account</Link>
+            </p>
+          )}
         </div>
       </div>
 
@@ -186,5 +281,21 @@ const LoginPage = () => {
     </div>
   );
 };
+
+const labelStyle = {
+  display: "block",
+  fontSize: "0.875rem",
+  fontWeight: 500,
+  color: "var(--text-primary)",
+};
+
+const ghostBtn = (color) => ({
+  background: "none",
+  border: "none",
+  color,
+  fontSize: "0.875rem",
+  cursor: "pointer",
+  padding: 0,
+});
 
 export default LoginPage;

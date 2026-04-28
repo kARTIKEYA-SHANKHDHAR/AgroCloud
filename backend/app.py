@@ -18,6 +18,7 @@ def create_app() -> Flask:
     REGION = "ap-south-1"
     PREDICTIONS_TABLE = os.getenv("PREDICTIONS_TABLE")
     FARMS_TABLE = os.getenv("FARMS_TABLE")
+    SENSOR_DATA_TABLE = os.getenv("SENSOR_DATA_TABLE")
     COGNITO_USER_POOL_ID = os.getenv("COGNITO_USER_POOL_ID")
 
     # Initialize AWS Clients
@@ -26,6 +27,7 @@ def create_app() -> Flask:
     
     predictions_table = dynamodb.Table(PREDICTIONS_TABLE) if PREDICTIONS_TABLE else None
     farms_table = dynamodb.Table(FARMS_TABLE) if FARMS_TABLE else None
+    sensor_data_table = dynamodb.Table(SENSOR_DATA_TABLE) if SENSOR_DATA_TABLE else None
 
     # --- Load ML Model ---
     MODEL_PATH = os.path.join(os.path.dirname(__file__), "irrigation_model.pkl")
@@ -142,6 +144,46 @@ def create_app() -> Flask:
             items = [i for i in response.get("Items", []) if i.get("user_id") == user_info["uid"]]
             items.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
             return jsonify(items), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    # ── IOT SENSOR ENDPOINTS ───────────────────────────────────
+
+    @app.route("/sensors/latest", methods=["GET"])
+    def get_latest_sensors():
+        try:
+            # In a real scenario, we might filter by user's thing_id
+            # For this simulation, we'll fetch the 'AgroSensorNode'
+            if not sensor_data_table:
+                return jsonify({"error": "Sensor table not configured"}), 500
+
+            response = sensor_data_table.get_item(Key={"thing_id": "AgroSensorNode"})
+            item = response.get("Item", {})
+
+            if not item:
+                return jsonify({
+                    "moisture": 0,
+                    "temperature": 0,
+                    "humidity": 0,
+                    "water_level": 0,
+                    "alerts": []
+                }), 200
+
+            # Add logic for alerts
+            alerts = []
+            moisture = float(item.get("moisture", 100))
+            temp = float(item.get("temperature", 0))
+            water = float(item.get("water_level", 100))
+
+            if moisture < 30:
+                alerts.append("Low soil moisture detected!")
+            if temp > 35:
+                alerts.append("High temperature warning!")
+            if water < 20:
+                alerts.append("Low water level in reservoir!")
+
+            item["alerts"] = alerts
+            return jsonify(item), 200
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 

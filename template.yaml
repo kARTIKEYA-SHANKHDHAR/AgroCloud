@@ -50,6 +50,7 @@ Resources:
         Variables:
           PREDICTIONS_TABLE: !Ref PredictionsTable
           FARMS_TABLE: !Ref FarmsTable
+          SENSOR_DATA_TABLE: !Ref SensorDataTable
           COGNITO_USER_POOL_ID: !Ref AgroUserPool
           COGNITO_CLIENT_ID: !Ref AgroUserPoolClient
       Events:
@@ -82,6 +83,48 @@ Resources:
       PrimaryKey:
         Name: user_id
         Type: String
+
+  SensorDataTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: thing_id
+        Type: String
+
+  # ── IOT INTEGRATION ──────────────────────────────────────────
+  IoTDynamoDBRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: iot.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: IoTDynamoDBPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                Resource: !GetAtt SensorDataTable.Arn
+
+  IoTTopicRule:
+    Type: AWS::IoT::TopicRule
+    Properties:
+      RuleName: AgroCloudSensorDataRule
+      TopicRulePayload:
+        RuleDisabled: false
+        Sql: "SELECT * FROM 'agrocloud/sensors/#'"
+        Actions:
+          - DynamoDB:
+              TableName: !Ref SensorDataTable
+              RoleArn: !GetAtt IoTDynamoDBRole.Arn
+              HashKeyField: "thing_id"
+              HashKeyValue: "${thing_id}"
 
 Outputs:
   AgroCloudApiEndpoint:

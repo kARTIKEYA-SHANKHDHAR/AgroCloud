@@ -4,6 +4,7 @@ import Layout from "../components/Layout";
 import StatCard from "../components/StatCard";
 import ChartCard from "../components/ChartCard";
 import WeatherWidget from "../components/WeatherWidget";
+import SensorSection from "../components/SensorSection";
 import FarmSetupModal from "../components/FarmSetupModal";
 import { useAuth } from "../services/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
@@ -90,6 +91,9 @@ const FarmerDashboard = () => {
       <div className="mb-5">
         <WeatherWidget onSetupFarm={() => setShowFarmModal(true)} />
       </div>
+
+      {/* ── Live IoT Sensors ── */}
+      <SensorSection />
 
       {/* Stat cards */}
       <div className="grid gap-4 md:grid-cols-3">
