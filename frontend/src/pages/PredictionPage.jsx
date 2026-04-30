@@ -54,18 +54,16 @@ const PredictionPage = () => {
     }
   }, [weather]);
 
-  // ── Fetch IoT sensor data and auto-fill temperature + humidity if available ─
-  // Does NOT override weather auto-fill; IoT takes priority when present.
+  // ── IoT sensor data — fetched ONLY on manual refresh button click ─────────
   useEffect(() => {
-    let active = true;
-    const fetchIot = async (manual = false) => {
-      if (manual) setIotRefreshing(true);
+    const fetchIot = async () => {
+      setIotRefreshing(true);
       try {
         const res = await getLatestSensors();
         // API returns { thing_id, alerts, payload: { moisture, temperature, ... } }
         const wrapper = res.data;
         const d = wrapper?.payload || wrapper; // handle both flat and nested
-        if (active && d && Object.keys(d).length > 1) {
+        if (d && Object.keys(d).length > 1) {
           setIotSensor(d);
           setIotLastUpdated(new Date());
           setForm((prev) => ({
@@ -75,12 +73,10 @@ const PredictionPage = () => {
           }));
         }
       } catch (_) { /* silent — IoT optional */ }
-      finally { if (manual) setIotRefreshing(false); }
+      finally { setIotRefreshing(false); }
     };
-    fetchIotRef.current = () => fetchIot(true);
-    fetchIot();
-    const iv = setInterval(fetchIot, 10000); // refresh every 10 s
-    return () => { active = false; clearInterval(iv); };
+    // Expose to refresh button — no auto-call, no interval
+    fetchIotRef.current = fetchIot;
   }, []);
 
 
