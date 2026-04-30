@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import Layout from "../components/Layout";
 import WeatherWidget from "../components/WeatherWidget";
 import FarmSetupModal from "../components/FarmSetupModal";
-import { predictIrrigation } from "../services/api";
+import { predictIrrigation, getLatestSensors } from "../services/api";
+
 import { useLanguage } from "../context/LanguageContext";
 import { usePredictions } from "../context/PredictionContext";
 import { useFarm } from "../context/FarmContext";
@@ -33,6 +34,10 @@ const PredictionPage = () => {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState("");
 
+  // ── IoT sensor state (append-only, does NOT modify existing form logic) ─
+  const [iotSensor, setIotSensor] = useState(null);
+
+
   // ── Auto-fill weather from FarmContext when it loads/refreshes ─
   useEffect(() => {
     if (weather) {
@@ -44,6 +49,30 @@ const PredictionPage = () => {
       }));
     }
   }, [weather]);
+
+  // ── Fetch IoT sensor data and auto-fill temperature + humidity if available ─
+  // Does NOT override weather auto-fill; IoT takes priority when present.
+  useEffect(() => {
+    let active = true;
+    const fetchIot = async () => {
+      try {
+        const res = await getLatestSensors();
+        const d = res.data;
+        if (active && d && Object.keys(d).length > 1) {
+          setIotSensor(d);
+          setForm((prev) => ({
+            ...prev,
+            temperature: d.temperature != null ? parseFloat(d.temperature).toFixed(1) : prev.temperature,
+            humidity:    d.humidity    != null ? parseFloat(d.humidity).toFixed(0)    : prev.humidity,
+          }));
+        }
+      } catch (_) { /* silent — IoT optional */ }
+    };
+    fetchIot();
+    const iv = setInterval(fetchIot, 10000); // refresh every 10 s
+    return () => { active = false; clearInterval(iv); };
+  }, []);
+
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -123,6 +152,47 @@ const PredictionPage = () => {
           <p className="mb-4 text-sm font-semibold text-gray-800 dark:text-slate-100">
             {t.predFieldCond}
           </p>
+
+          {/* ── IoT Field Conditions (read-only, appended — existing inputs unchanged) ── */}
+          {iotSensor && (
+            <div className="mb-4 rounded-xl border border-blue-200 dark:border-blue-800/40 bg-blue-50 dark:bg-blue-900/15 px-3 py-3">
+              <div className="flex items-center gap-1.5 mb-2">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-60" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+                </span>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-blue-600 dark:text-blue-400">AWS IoT Core — Live Field Readings</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-lg bg-white/60 dark:bg-slate-800/60 px-2.5 py-2">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-0.5">Soil Moisture</p>
+                  <p className="text-sm font-black text-gray-900 dark:text-slate-100">
+                    {iotSensor.moisture != null ? `${parseFloat(iotSensor.moisture).toFixed(1)}%` : "—"}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-white/60 dark:bg-slate-800/60 px-2.5 py-2">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-0.5">Soil pH</p>
+                  <p className="text-sm font-black text-gray-900 dark:text-slate-100">
+                    {iotSensor.soil_ph != null ? parseFloat(iotSensor.soil_ph).toFixed(1) : "—"}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-white/60 dark:bg-slate-800/60 px-2.5 py-2">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-0.5">Water Level</p>
+                  <p className="text-sm font-black text-gray-900 dark:text-slate-100">
+                    {iotSensor.water_level != null ? `${parseFloat(iotSensor.water_level).toFixed(1)}%` : "—"}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-white/60 dark:bg-slate-800/60 px-2.5 py-2">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-0.5">Temp / Humidity</p>
+                  <p className="text-sm font-black text-gray-900 dark:text-slate-100">
+                    {iotSensor.temperature != null ? `${parseFloat(iotSensor.temperature).toFixed(1)}°C` : "—"} · {iotSensor.humidity != null ? `${parseFloat(iotSensor.humidity).toFixed(0)}%rh` : "—"}
+                  </p>
+                </div>
+              </div>
+              <p className="mt-2 text-[9px] text-blue-500 dark:text-blue-400">↑ Temperature & Humidity above are auto-filled into prediction inputs below</p>
+            </div>
+          )}
+
 
           {/* Weather inputs (editable — user can override auto-fill) */}
           <div className="grid gap-4 md:grid-cols-3">
