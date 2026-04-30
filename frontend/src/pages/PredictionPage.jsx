@@ -7,6 +7,8 @@ import { predictIrrigation } from "../services/api";
 import { useLanguage } from "../context/LanguageContext";
 import { usePredictions } from "../context/PredictionContext";
 import { useFarm } from "../context/FarmContext";
+import SensorSection from "../components/SensorSection";
+
 
 const crops = ["Wheat", "Maize", "Rice", "Soybean", "Cotton"];
 const soils = ["Loamy", "Sandy", "Clay"];
@@ -276,6 +278,10 @@ const PredictionPage = () => {
             </div>
           )}
         </div>
+      </div>
+      {/* ── Live IoT Sensor Data ── */}
+      <div className="mt-6">
+        <SensorSection />
       </div>
     </Layout>
   );
