@@ -46,6 +46,8 @@ Resources:
             TableName: !Ref PredictionsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref FarmsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SensorDataTable
       Environment:
         Variables:
           PREDICTIONS_TABLE: !Ref PredictionsTable
