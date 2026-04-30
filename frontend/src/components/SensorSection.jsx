@@ -155,8 +155,11 @@ const SensorSection = () => {
   const fetchData = async () => {
     try {
       const res = await getLatestSensors();
-      if (res.data && Object.keys(res.data).length > 1) {
-        setSensors(res.data);
+      // API returns { thing_id, alerts, payload: { moisture, temperature, ... } }
+      const wrapper = res.data;
+      const d = wrapper?.payload || wrapper; // unwrap nested payload
+      if (d && Object.keys(d).length > 1) {
+        setSensors(d);
         setLastUpdated(new Date());
         setError(false);
       }

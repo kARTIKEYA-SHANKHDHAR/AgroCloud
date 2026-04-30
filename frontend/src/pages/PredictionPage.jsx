@@ -379,11 +379,11 @@ const PredictionPage = () => {
                       </span>
                     </span>
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                      p.prediction === 1
+                      p.raw === 1
                         ? "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"
                         : "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300"
                     }`}>
-                      {p.prediction === 1 ? "💧 Irrigate" : "✓ Skip"}
+                      {p.raw === 1 ? "💧 Irrigate" : "✓ Skip"}
                     </span>
                   </div>
                 ))}
