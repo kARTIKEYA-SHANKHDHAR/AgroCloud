@@ -36,6 +36,10 @@ const PredictionPage = () => {
 
   // ── IoT sensor state (append-only, does NOT modify existing form logic) ─
   const [iotSensor, setIotSensor] = useState(null);
+  const [iotRefreshing, setIotRefreshing] = useState(false);
+  const [iotLastUpdated, setIotLastUpdated] = useState(null);
+  const fetchIotRef = React.useRef(null);
+
 
 
   // ── Auto-fill weather from FarmContext when it loads/refreshes ─
@@ -54,12 +58,16 @@ const PredictionPage = () => {
   // Does NOT override weather auto-fill; IoT takes priority when present.
   useEffect(() => {
     let active = true;
-    const fetchIot = async () => {
+    const fetchIot = async (manual = false) => {
+      if (manual) setIotRefreshing(true);
       try {
         const res = await getLatestSensors();
-        const d = res.data;
+        // API returns { thing_id, alerts, payload: { moisture, temperature, ... } }
+        const wrapper = res.data;
+        const d = wrapper?.payload || wrapper; // handle both flat and nested
         if (active && d && Object.keys(d).length > 1) {
           setIotSensor(d);
+          setIotLastUpdated(new Date());
           setForm((prev) => ({
             ...prev,
             temperature: d.temperature != null ? parseFloat(d.temperature).toFixed(1) : prev.temperature,
@@ -67,11 +75,14 @@ const PredictionPage = () => {
           }));
         }
       } catch (_) { /* silent — IoT optional */ }
+      finally { if (manual) setIotRefreshing(false); }
     };
+    fetchIotRef.current = () => fetchIot(true);
     fetchIot();
     const iv = setInterval(fetchIot, 10000); // refresh every 10 s
     return () => { active = false; clearInterval(iv); };
   }, []);
+
 
 
   const handleChange = (e) => {
@@ -154,15 +165,38 @@ const PredictionPage = () => {
           </p>
 
           {/* ── IoT Field Conditions (read-only, appended — existing inputs unchanged) ── */}
-          {iotSensor && (
+          {iotSensor ? (
             <div className="mb-4 rounded-xl border border-blue-200 dark:border-blue-800/40 bg-blue-50 dark:bg-blue-900/15 px-3 py-3">
+              {/* Header row */}
               <div className="flex items-center gap-1.5 mb-2">
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-60" />
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
                 </span>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-blue-600 dark:text-blue-400">AWS IoT Core — Live Field Readings</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-blue-600 dark:text-blue-400 flex-1">AWS IoT Core — Live Field Readings</p>
+                {/* Last updated */}
+                {iotLastUpdated && (
+                  <span className="text-[9px] text-blue-400 dark:text-blue-500">
+                    {iotLastUpdated.toLocaleTimeString()}
+                  </span>
+                )}
+                {/* Manual refresh button */}
+                <button
+                  type="button"
+                  onClick={() => fetchIotRef.current?.()}
+                  disabled={iotRefreshing}
+                  title="Refresh sensor data"
+                  className="ml-1 p-0.5 rounded text-blue-500 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/40 transition disabled:opacity-40"
+                >
+                  <svg
+                    className={`h-3 w-3 ${iotRefreshing ? "animate-spin" : ""}`}
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5M4 9a9 9 0 0114.5-3.5M20 15a9 9 0 01-14.5 3.5" />
+                  </svg>
+                </button>
               </div>
+              {/* Grid of sensor values */}
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-lg bg-white/60 dark:bg-slate-800/60 px-2.5 py-2">
                   <p className="text-[9px] font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400 mb-0.5">Soil Moisture</p>
@@ -190,6 +224,19 @@ const PredictionPage = () => {
                 </div>
               </div>
               <p className="mt-2 text-[9px] text-blue-500 dark:text-blue-400">↑ Temperature & Humidity above are auto-filled into prediction inputs below</p>
+            </div>
+          ) : (
+            <div className="mb-4 rounded-xl border border-dashed border-blue-200 dark:border-blue-800/30 bg-blue-50/40 dark:bg-blue-900/10 px-3 py-3 flex items-center gap-2">
+              <span className="text-blue-400 text-base">📡</span>
+              <p className="text-[10px] text-blue-500 dark:text-blue-400 flex-1">Waiting for IoT sensor data…</p>
+              <button
+                type="button"
+                onClick={() => fetchIotRef.current?.()}
+                disabled={iotRefreshing}
+                className="text-[10px] text-blue-500 hover:text-blue-700 underline disabled:opacity-40"
+              >
+                {iotRefreshing ? "Refreshing…" : "Refresh"}
+              </button>
             </div>
           )}
 
