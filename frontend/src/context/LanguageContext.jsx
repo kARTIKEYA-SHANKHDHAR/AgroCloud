@@ -123,6 +123,30 @@ const translations = {
     anaHistory: "Your irrigation history",
     anaHistoryDesc: "How often irrigation was required or skipped.",
     anaNoHistory: "No prediction history yet. Run predictions to see analytics.",
+
+    /* Analytics — stat cards */
+    anaStatTotal: "Total Predictions",
+    anaStatTotalHint: "All-time prediction count",
+    anaStatRate: "Irrigation Rate",
+    anaStatRateHint: "Percentage requiring irrigation",
+    anaStatAvgTemp: "Avg Temperature",
+    anaStatAvgTempHint: "Average across all predictions",
+    anaStatAvgHumid: "Avg Humidity",
+    anaStatAvgHumidHint: "Average relative humidity",
+
+    /* Analytics — chart titles */
+    anaCropTitle: "Predictions by Crop",
+    anaCropDesc: "How many predictions were run for each crop type.",
+    anaSoilTitle: "Irrigation Rate by Soil Type",
+    anaSoilDesc: "Percentage of predictions recommending irrigation per soil type.",
+    anaOutcomeTitle: "Outcome Breakdown",
+    anaOutcomeDesc: "Overall split between irrigation and no-irrigation decisions.",
+    anaIrrigationNeeded: "💧 Irrigation Needed",
+    anaNoIrrigation: "✓ No Irrigation",
+    anaByCrop: "By Crop",
+    anaNoDataYet: "No data yet",
+    anaPredPerCrop: "Predictions per Crop",
+    anaIrrigRatePct: "Irrigation Rate (%)",
   },
 
   hi: {
@@ -243,15 +267,44 @@ const translations = {
     anaHistory: "आपका सिंचाई इतिहास",
     anaHistoryDesc: "सिंचाई की कितनी बार आवश्यकता थी या नहीं।",
     anaNoHistory: "अभी तक कोई पूर्वानुमान इतिहास नहीं है। एनालिटिक्स देखने के लिए पूर्वानुमान चलाएं।",
+
+    /* Analytics — stat cards */
+    anaStatTotal: "कुल पूर्वानुमान",
+    anaStatTotalHint: "सभी समय की गणना",
+    anaStatRate: "सिंचाई दर",
+    anaStatRateHint: "सिंचाई की आवश्यकता का प्रतिशत",
+    anaStatAvgTemp: "औसत तापमान",
+    anaStatAvgTempHint: "सभी पूर्वानुमानों का औसत",
+    anaStatAvgHumid: "औसत आर्द्रता",
+    anaStatAvgHumidHint: "औसत सापेक्ष आर्द्रता",
+
+    /* Analytics — chart titles */
+    anaCropTitle: "फसल के अनुसार पूर्वानुमान",
+    anaCropDesc: "प्रत्येक फसल प्रकार के लिए कितने पूर्वानुमान चलाए गए।",
+    anaSoilTitle: "मिट्टी के प्रकार के अनुसार सिंचाई दर",
+    anaSoilDesc: "मिट्टी के प्रकार के अनुसार सिंचाई की सिफारिश करने वाले पूर्वानुमानों का प्रतिशत।",
+    anaOutcomeTitle: "परिणाम विभाजन",
+    anaOutcomeDesc: "सिंचाई और बिना सिंचाई के निर्णयों के बीच समग्र विभाजन।",
+    anaIrrigationNeeded: "💧 सिंचाई आवश्यक",
+    anaNoIrrigation: "✓ सिंचाई नहीं",
+    anaByCrop: "फसल के अनुसार",
+    anaNoDataYet: "अभी तक कोई डेटा नहीं",
+    anaPredPerCrop: "फसल के अनुसार पूर्वानुमान",
+    anaIrrigRatePct: "सिंचाई दर (%)",
   },
 };
 
 const LanguageContext = createContext(null);
 
 export const LanguageProvider = ({ children }) => {
-  const [lang, setLang] = useState("en");
-  const t = translations[lang];
-  const toggleLang = (l) => setLang(l);
+  const [lang, setLang] = useState(
+    () => localStorage.getItem("agrocloud_lang") || "en"
+  );
+  const t = translations[lang] || translations.en;
+  const toggleLang = (l) => {
+    setLang(l);
+    localStorage.setItem("agrocloud_lang", l);
+  };
 
   return (
     <LanguageContext.Provider value={{ lang, t, toggleLang, translations }}>

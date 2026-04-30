@@ -240,9 +240,9 @@ const PredictionPage = () => {
           {/* Weather inputs (editable — user can override auto-fill) */}
           <div className="grid gap-4 md:grid-cols-3">
             {[
-              { name: "temperature", label: `${t.predTemp} (°C)` },
-              { name: "humidity",    label: `${t.predHumid} (%)` },
-              { name: "rainfall",    label: `${t.predRain} (mm)` },
+              { name: "temperature", label: t.predTemp  },
+              { name: "humidity",    label: t.predHumid },
+              { name: "rainfall",    label: t.predRain  },
             ].map(({ name, label }) => (
               <div key={name}>
                 <label className="mb-1 block text-xs font-medium text-gray-600 dark:text-slate-300">
@@ -348,7 +348,7 @@ const PredictionPage = () => {
                   onClick={() => navigate("/farmer")}
                   className="mt-3 rounded-lg border border-gray-200 dark:border-slate-600 px-3 py-1.5 text-xs text-gray-500 dark:text-slate-400 hover:border-green-600 hover:text-green-700 dark:hover:text-green-400 transition"
                 >
-                  View Dashboard →
+                  View Dashboard →  
                 </button>
               </div>
             ) : (
