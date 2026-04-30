@@ -19,7 +19,7 @@ const FarmerDashboard = () => {
 
   // ── Derived stats ──────────────────────────────────────────────────────────
   const totalPredictions  = predictions.length;
-  const irrigationNeeded  = predictions.filter((p) => p.prediction === 1).length;
+  const irrigationNeeded  = predictions.filter((p) => p.raw === 1).length;
   const noIrrigation      = totalPredictions - irrigationNeeded;
 
   // ── Trend chart data ────────────────────────────────────────────────────────
@@ -31,7 +31,7 @@ const FarmerDashboard = () => {
           ? p.timestamp.slice(0, 10)
           : p.timestamp?.toDate?.()?.toISOString?.()?.slice(0, 10) || "unknown";
       if (!counts[day]) counts[day] = { irrigationNeeded: 0, noIrrigation: 0 };
-      if (p.prediction === 1) counts[day].irrigationNeeded += 1;
+      if (p.raw === 1) counts[day].irrigationNeeded += 1;
       else counts[day].noIrrigation += 1;
     });
     const labels = Object.keys(counts).sort();
@@ -190,12 +190,12 @@ const FarmerDashboard = () => {
                     </div>
                     <span
                       className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
-                        p.prediction === 1
+                        p.raw === 1
                           ? "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"
                           : "bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300"
                       }`}
                     >
-                      {p.prediction === 1 ? "💧 Irrigate" : "✓ Skip"}
+                      {p.raw === 1 ? "💧 Irrigate" : "✓ Skip"}
                     </span>
                   </div>
                 );
